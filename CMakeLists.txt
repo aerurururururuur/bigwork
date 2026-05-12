@@ -7,9 +7,9 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(ROADSIDE_STROLL_FETCH_SFML "Download SFML 2.6 when not found on the system" ON)
 
-find_package(SFML 2.5 COMPONENTS graphics window system main CONFIG QUIET)
+find_package(SFML 2.5 COMPONENTS graphics window system audio main CONFIG QUIET)
 if(NOT SFML_FOUND)
-    find_package(SFML 2.5 COMPONENTS graphics window system main QUIET)
+    find_package(SFML 2.5 COMPONENTS graphics window system audio main QUIET)
 endif()
 
 if(NOT SFML_FOUND AND ROADSIDE_STROLL_FETCH_SFML)
@@ -20,17 +20,17 @@ if(NOT SFML_FOUND AND ROADSIDE_STROLL_FETCH_SFML)
         GIT_TAG 2.6.1
         GIT_SHALLOW TRUE
     )
-    set(SFML_BUILD_AUDIO OFF CACHE BOOL "" FORCE)
+    set(SFML_BUILD_AUDIO ON CACHE BOOL "" FORCE)
     set(SFML_BUILD_NETWORK OFF CACHE BOOL "" FORCE)
     FetchContent_MakeAvailable(SFML)
 endif()
 
 if(TARGET SFML::Graphics)
-    set(ROADSIDE_SFML_LIBS SFML::Graphics SFML::Window SFML::System)
+    set(ROADSIDE_SFML_LIBS SFML::Graphics SFML::Window SFML::System SFML::Audio)
 elseif(TARGET sfml-graphics)
-    set(ROADSIDE_SFML_LIBS sfml-graphics sfml-window sfml-system)
+    set(ROADSIDE_SFML_LIBS sfml-graphics sfml-window sfml-system sfml-audio)
 else()
-    message(FATAL_ERROR "SFML 2.x (graphics, window, system) is required. Install it or set ROADSIDE_STROLL_FETCH_SFML=ON.")
+    message(FATAL_ERROR "SFML 2.x (graphics, window, system, audio) is required. Install it or set ROADSIDE_STROLL_FETCH_SFML=ON.")
 endif()
 
 set(ROADSIDE_SFML_MAIN_LIBS "")
@@ -43,6 +43,9 @@ endif()
 add_library(roadside_domain STATIC
     src/domain/tile_base.cpp
     src/domain/playfield.cpp
+    src/domain/bullet_hit_policy.cpp
+    src/domain/enemy_behavior.cpp
+    src/domain/score_state.cpp
     src/domain/combat_entities.cpp
     src/domain/world.cpp
 )
@@ -60,6 +63,7 @@ add_library(roadside_infrastructure STATIC
     src/infrastructure/win32_keyboard.cpp
     src/infrastructure/win32_console_terminal.cpp
     src/infrastructure/file_audit_sink.cpp
+    src/infrastructure/game_config.cpp
     src/infrastructure/std_random.cpp
     src/infrastructure/steady_clock.cpp
 )
@@ -74,8 +78,13 @@ add_library(roadside_representation STATIC
     src/representation/key_mapping.cpp
     src/representation/frame_composer.cpp
     src/representation/theme_palette.cpp
+    src/representation/sprite_sheet_config.cpp
+    src/representation/enemy_visual_resources.cpp
+    src/representation/player_sprite_animator.cpp
     src/representation/sfml_game_window.cpp
     src/representation/movement_particles.cpp
+    src/representation/combat_vfx_particles.cpp
+    src/representation/bg_music_controller.cpp
 )
 target_include_directories(roadside_representation PUBLIC ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(roadside_representation PUBLIC roadside_application roadside_infrastructure ${ROADSIDE_SFML_LIBS})
@@ -95,7 +104,7 @@ if(MSVC)
 endif()
 
 if(WIN32 AND TARGET sfml-graphics)
-    foreach(_sfml_dll IN ITEMS sfml-graphics sfml-window sfml-system)
+    foreach(_sfml_dll IN ITEMS sfml-graphics sfml-window sfml-system sfml-audio)
         if(TARGET ${_sfml_dll})
             add_custom_command(
                 TARGET roadside_stroll

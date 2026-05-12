@@ -8,7 +8,6 @@
 #include "domain/raw_input.hpp"
 #include "domain/world.hpp"
 
-#include <cstdint>
 #include <vector>
 
 namespace application {
@@ -21,7 +20,7 @@ public:
 
     void tick(double dt, const std::vector<GameCommand>& commands, const domain::RawInputSnapshot& raw);
 
-    RenderSnapshot buildSnapshot() const;
+    RenderSnapshot buildSnapshot();
 
     bool wantsQuit() const { return quit_requested_; }
 
@@ -32,11 +31,6 @@ private:
     ThemeStyle theme_{ThemeStyle::Dusk};
     bool quit_requested_{false};
     int cell_px_{16};
-
-    /** Written at end of each tick for buildSnapshot (player grid delta, battle only). */
-    bool last_player_move_step_{false};
-    std::int8_t last_player_step_dx_{0};
-    std::int8_t last_player_step_dy_{0};
 };
 
 } // namespace application

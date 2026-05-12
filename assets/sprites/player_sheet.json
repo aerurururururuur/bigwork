@@ -1,0 +1,17 @@
+{
+  "texture": "assets/sprites/role1.png",
+  "columns": 10,
+  "rows": 9,
+  "scale_cells": 1.5,
+  "clips": {
+    "idle": { "row": 0, "start_col": 0, "frame_count": 10, "fps": 10 },
+    "run": { "row": 1, "start_col": 0, "frame_count": 10, "fps": 12 },
+    "death": {
+      "fps": 12,
+      "segments": [
+        { "row": 7, "start_col": 0, "frame_count": 10 },
+        { "row": 8, "start_col": 0, "frame_count": 2 }
+      ]
+    }
+  }
+}

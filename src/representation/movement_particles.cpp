@@ -28,14 +28,13 @@ sf::Color MovementParticleSystem::baseDustColor(application::ThemeStyle theme) {
 }
 
 void MovementParticleSystem::spawnBurst(const application::RenderSnapshot& snap, int cell_px, int count) {
-    const float foot_x = (static_cast<float>(snap.player_x) + 0.5f) * static_cast<float>(cell_px);
+    const float cell_f = static_cast<float>(cell_px);
+    const float foot_x = snap.player_world_x * cell_f;
     const float foot_y =
-        (static_cast<float>(snap.sky_rows + snap.player_y) + 0.92f) * static_cast<float>(cell_px);
+        (static_cast<float>(snap.sky_rows) + snap.player_world_y + 0.42f) * cell_f;
 
-    const float sdx = static_cast<float>(snap.player_step_dx);
-    const float sdy = static_cast<float>(snap.player_step_dy);
-    float bx = -sdx;
-    float by = -sdy;
+    float bx = -snap.player_vx;
+    float by = -snap.player_vy;
     const float blen = std::sqrt(bx * bx + by * by);
     if (blen > 1e-4f) {
         bx /= blen;
@@ -72,6 +71,7 @@ void MovementParticleSystem::spawnBurst(const application::RenderSnapshot& snap,
 void MovementParticleSystem::update(double dt, const application::RenderSnapshot& snap, int cell_px) {
     if (!snap.gameplay_active || snap.overlay.active) {
         particles_.clear();
+        dust_emit_acc_ = 0.0;
         return;
     }
 
@@ -86,8 +86,15 @@ void MovementParticleSystem::update(double dt, const application::RenderSnapshot
                                     [](const Particle& p) { return p.age >= p.life; }),
                      particles_.end());
 
-    if (snap.player_move_step && (snap.player_step_dx != 0 || snap.player_step_dy != 0)) {
-        spawnBurst(snap, cell_px, kMovementParticlesSpawnOnStep);
+    if (snap.player_emit_dust) {
+        dust_emit_acc_ += dt;
+        constexpr double kBurstInterval = 0.055;
+        if (dust_emit_acc_ >= kBurstInterval) {
+            dust_emit_acc_ = 0.0;
+            spawnBurst(snap, cell_px, kMovementParticlesSpawnOnStep);
+        }
+    } else {
+        dust_emit_acc_ = 0.0;
     }
 }
 

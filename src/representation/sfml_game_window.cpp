@@ -6,10 +6,35 @@
 
 #include <algorithm>
 #include <cmath>
+#include <filesystem>
+#include <optional>
+#include <string>
+
+namespace {
+
+constexpr const char* kPlayerSheetConfigPath = "assets/sprites/player_sheet.json";
+
+std::uint8_t enemyArchetypeColorId(std::uint8_t archetype) {
+    switch (archetype) {
+    case 0:
+        return 43;
+    case 1:
+        return 44;
+    case 2:
+        return 45;
+    case 3:
+        return 46;
+    default:
+        return 45;
+    }
+}
+
+} // namespace
 
 namespace representation {
 
-SfmlGameWindow::SfmlGameWindow(int logical_cols, int logical_rows, int cell_px)
+SfmlGameWindow::SfmlGameWindow(int logical_cols, int logical_rows, int cell_px,
+                               std::optional<std::filesystem::path> background_image_path)
     : logical_cols_{logical_cols}, logical_rows_{logical_rows}, cell_px_{cell_px} {
     const unsigned width = static_cast<unsigned>(logical_cols * cell_px);
     const unsigned height = static_cast<unsigned>(logical_rows * cell_px);
@@ -33,10 +58,48 @@ SfmlGameWindow::SfmlGameWindow(int logical_cols, int logical_rows, int cell_px)
     bullet_shape_.setFillColor(colorFromId(46));
     bullet_shape_.setOutlineThickness(0.f);
 
+    actor_circle_.setPointCount(22);
+    actor_circle_.setOutlineThickness(0.f);
+
     font_ok_ = loadFont();
     if (font_ok_) {
         overlay_text_.setFont(font_);
         overlay_text_.setFillColor(sf::Color(235, 235, 240));
+    }
+
+    player_sheet_cfg_ = SpriteSheetConfig::load_from_file(kPlayerSheetConfigPath);
+    if (player_sheet_cfg_.valid && player_texture_.loadFromFile(player_sheet_cfg_.texture_path)) {
+        const auto sz = player_texture_.getSize();
+        const bool grid_ok = (player_sheet_cfg_.columns > 0 && player_sheet_cfg_.rows > 0 &&
+                                sz.x % static_cast<unsigned>(player_sheet_cfg_.columns) == 0u &&
+                                sz.y % static_cast<unsigned>(player_sheet_cfg_.rows) == 0u);
+        if (grid_ok) {
+            player_sprite_.setTexture(player_texture_);
+            player_anim_.set_config(&player_sheet_cfg_);
+            player_sprite_ready_ = true;
+        }
+    }
+
+    (void)enemy_visuals_.load_from_file("assets/sprites/enemy_visuals.json");
+
+    if (background_image_path && !background_image_path->empty()) {
+        std::error_code ec;
+        if (std::filesystem::exists(*background_image_path, ec)) {
+            const std::string path_utf8 = background_image_path->string();
+            if (background_texture_.loadFromFile(path_utf8)) {
+                background_texture_.setSmooth(true);
+                background_sprite_.setTexture(background_texture_);
+                const auto ts = background_texture_.getSize();
+                if (ts.x > 0u && ts.y > 0u) {
+                    const float lw = static_cast<float>(logical_cols * cell_px);
+                    const float lh = static_cast<float>(logical_rows * cell_px);
+                    background_sprite_.setPosition(0.f, 0.f);
+                    background_sprite_.setScale(lw / static_cast<float>(ts.x),
+                                               lh / static_cast<float>(ts.y));
+                    background_loaded_ = true;
+                }
+            }
+        }
     }
 }
 
@@ -169,19 +232,174 @@ bool SfmlGameWindow::pollInput(domain::RawInputSnapshot& out, const application:
     return true;
 }
 
+void SfmlGameWindow::drawEnemies(const application::RenderSnapshot& snap) {
+    const float cell = static_cast<float>(cell_px_);
+    const float pr = std::max(2.f, snap.actor_radius_world * cell);
+    actor_circle_.setRadius(pr);
+    actor_circle_.setOrigin(pr, pr);
+
+    constexpr std::uint8_t kArchetypeEliteHybrid = 2;
+    constexpr std::uint8_t kSpritePebblin = 3;
+    const float anim_eps = kEnemyAnimMoveEpsilonWorld;
+    const float anim_eps_sq = anim_eps * anim_eps;
+
+    for (const auto& e : snap.enemies) {
+        const float px = e.world_x * cell;
+        const float py = (static_cast<float>(snap.sky_rows) + e.world_y) * cell;
+
+        const int sid = static_cast<int>(e.sprite_id);
+        const float speed_sq = e.anim_vx * e.anim_vx + e.anim_vy * e.anim_vy;
+        const bool moving = speed_sq > anim_eps_sq;
+        const float manhattan = std::fabs(e.world_x - snap.player_world_x) +
+                                std::fabs(e.world_y - snap.player_world_y);
+        const bool melee_pose = (e.sprite_id == kSpritePebblin && e.archetype == kArchetypeEliteHybrid &&
+                                 manhattan <= snap.elite_melee_manhattan_tiles);
+
+        const sf::Texture* use_tex = nullptr;
+        if (enemy_visuals_.sprite_ready(sid)) {
+            if (melee_pose) {
+                use_tex = enemy_visuals_.enemy_melee_tex(sid);
+            }
+            if (!use_tex) {
+                use_tex = moving ? enemy_visuals_.enemy_move_tex(sid) : enemy_visuals_.enemy_idle_tex(sid);
+            }
+        }
+
+        if (use_tex && use_tex->getSize().y > 0u) {
+            enemy_draw_sprite_.setTexture(*use_tex, true);
+            const float tex_h = static_cast<float>(use_tex->getSize().y);
+            const float tex_w = static_cast<float>(use_tex->getSize().x);
+            const float scale_vs = enemy_visuals_.enemy_scale_vs_disc(sid);
+            const float scale = (scale_vs * 2.f * pr) / tex_h;
+            const bool flip = e.anim_vx < -anim_eps;
+            enemy_draw_sprite_.setScale(flip ? -scale : scale, scale);
+            enemy_draw_sprite_.setOrigin(tex_w * 0.5f, tex_h);
+            enemy_draw_sprite_.setPosition(std::floor(px), std::floor(py));
+            window_.draw(enemy_draw_sprite_);
+        } else {
+            actor_circle_.setPosition(std::floor(px), std::floor(py));
+            actor_circle_.setFillColor(colorFromId(enemyArchetypeColorId(e.archetype)));
+            window_.draw(actor_circle_);
+        }
+
+        const float bar_w = pr * 2.4f;
+        const float bar_h = std::max(2.f, cell * 0.11f);
+        const float ratio =
+            static_cast<float>(e.hp) / static_cast<float>(std::max(1, e.hp_max));
+        sf::RectangleShape hp_bg(sf::Vector2f(bar_w, bar_h));
+        hp_bg.setOrigin(bar_w * 0.5f, bar_h);
+        hp_bg.setPosition(std::floor(px), std::floor(py - pr - 2.f));
+        hp_bg.setFillColor(sf::Color(20, 24, 32, 220));
+        window_.draw(hp_bg);
+        sf::RectangleShape hp_fill(sf::Vector2f(std::max(1.f, bar_w * ratio), bar_h));
+        hp_fill.setOrigin(bar_w * 0.5f, bar_h);
+        hp_fill.setPosition(std::floor(px), std::floor(py - pr - 2.f));
+        hp_fill.setFillColor(colorFromId(42));
+        window_.draw(hp_fill);
+    }
+}
+
+void SfmlGameWindow::drawPlayer(const application::RenderSnapshot& snap, double dt) {
+    const float cell = static_cast<float>(cell_px_);
+    const float pr = std::max(2.f, snap.actor_radius_world * cell);
+    const float px = snap.player_world_x * cell;
+    const float py = (static_cast<float>(snap.sky_rows) + snap.player_world_y) * cell;
+
+    player_anim_.update(dt, snap);
+    if (player_sprite_ready_) {
+        player_anim_.apply_to_sprite(player_sprite_, player_texture_.getSize().x, player_texture_.getSize().y,
+                                     cell_px_, pr);
+        player_sprite_.setPosition(std::floor(px), std::floor(py));
+        window_.draw(player_sprite_);
+    } else {
+        actor_circle_.setRadius(pr);
+        actor_circle_.setOrigin(pr, pr);
+        actor_circle_.setPosition(std::floor(px), std::floor(py));
+        actor_circle_.setFillColor(colorFromId(47));
+        window_.draw(actor_circle_);
+    }
+
+    const float bar_w = pr * 2.6f;
+    const float bar_h = std::max(2.f, cell * 0.12f);
+    const float ratio =
+        static_cast<float>(snap.player_hp) / static_cast<float>(std::max(1, snap.player_hp_max));
+    sf::RectangleShape hp_bg(sf::Vector2f(bar_w, bar_h));
+    hp_bg.setOrigin(bar_w * 0.5f, bar_h);
+    hp_bg.setPosition(std::floor(px), std::floor(py - pr - 2.f));
+    hp_bg.setFillColor(sf::Color(20, 24, 32, 220));
+    window_.draw(hp_bg);
+    sf::RectangleShape hp_fill(sf::Vector2f(std::max(1.f, bar_w * ratio), bar_h));
+    hp_fill.setOrigin(bar_w * 0.5f, bar_h);
+    hp_fill.setPosition(std::floor(px), std::floor(py - pr - 2.f));
+    hp_fill.setFillColor(colorFromId(41));
+    window_.draw(hp_fill);
+}
+
 void SfmlGameWindow::drawBullets(const application::RenderSnapshot& snap) {
-    const float len = std::max(3.f, static_cast<float>(cell_px_) * 0.55f);
-    const float thick = std::max(2.f, static_cast<float>(cell_px_) * 0.22f);
-    bullet_shape_.setSize(sf::Vector2f(len, thick));
-    bullet_shape_.setOrigin(len * 0.5f, thick * 0.5f);
+    const float base_len = std::max(3.f, static_cast<float>(cell_px_) * 0.55f);
+    const float base_thick = std::max(2.f, static_cast<float>(cell_px_) * 0.22f);
+    bullet_shape_.setOrigin(0.f, 0.f);
 
     for (const auto& b : snap.bullets) {
+        const bool enemy = (b.faction == application::BulletFactionView::Enemy);
+        const float len = enemy ? base_len * 1.15f : base_len;
+        const float thick = enemy ? base_thick * 1.35f : base_thick;
         const float px = b.world_x * static_cast<float>(cell_px_);
-        const float py = b.world_y * static_cast<float>(cell_px_);
+        const float py = (static_cast<float>(snap.sky_rows) + b.world_y) * static_cast<float>(cell_px_);
+
+        if (enemy && b.enemy_bullet_sprite == kEnemyBulletViewPebblinRock) {
+            const sf::Texture* rtex = enemy_visuals_.pebblin_rock_tex();
+            if (rtex && rtex->getSize().y > 0u) {
+                enemy_draw_sprite_.setTexture(*rtex, true);
+                const float tw = static_cast<float>(rtex->getSize().x);
+                const float th = static_cast<float>(rtex->getSize().y);
+                const float target = thick * 3.2f;
+                const float sc = target / th;
+                enemy_draw_sprite_.setScale(sc, sc);
+                enemy_draw_sprite_.setOrigin(tw * 0.5f, th * 0.5f);
+                enemy_draw_sprite_.setPosition(std::floor(px), std::floor(py));
+                enemy_draw_sprite_.setRotation(b.rotation_deg);
+                window_.draw(enemy_draw_sprite_);
+                continue;
+            }
+        }
+
+        bullet_shape_.setSize(sf::Vector2f(len, thick));
+        bullet_shape_.setOrigin(len * 0.5f, thick * 0.5f);
         bullet_shape_.setPosition(std::floor(px), std::floor(py));
         bullet_shape_.setRotation(b.rotation_deg);
+        if (enemy) {
+            bullet_shape_.setFillColor(colorFromId(39));
+            bullet_shape_.setOutlineColor(sf::Color(255, 160, 120, 200));
+            bullet_shape_.setOutlineThickness(std::max(0.5f, thick * 0.12f));
+        } else {
+            bullet_shape_.setFillColor(colorFromId(46));
+            bullet_shape_.setOutlineThickness(0.f);
+        }
         window_.draw(bullet_shape_);
     }
+}
+
+void SfmlGameWindow::drawBattleHud(const application::RenderSnapshot& snap) {
+    if (!snap.gameplay_active || !font_ok_) {
+        return;
+    }
+    const unsigned char_size =
+        std::max(8u, static_cast<unsigned>((static_cast<unsigned>(cell_px_) * 38u) / 100u));
+    overlay_text_.setCharacterSize(char_size);
+    overlay_text_.setFillColor(sf::Color(238, 240, 248));
+
+    int mult = 1;
+    if (snap.combo > 0) {
+        mult = std::min(8, 1 + snap.combo);
+    }
+    std::string line = "分数 " + std::to_string(snap.score);
+    if (snap.combo > 0) {
+        line += "  x" + std::to_string(mult);
+    }
+    overlay_text_.setString(line);
+    overlay_text_.setPosition(6.f, 4.f);
+    window_.draw(overlay_text_);
 }
 
 void SfmlGameWindow::drawOverlay(const application::RenderSnapshot& snap) {
@@ -249,6 +467,9 @@ void SfmlGameWindow::present(int rows, int cols, const std::vector<domain::Frame
                                const application::RenderSnapshot& snap, double dt) {
     syncLetterboxView();
     window_.clear(sf::Color(12, 14, 22));
+    if (background_loaded_) {
+        window_.draw(background_sprite_);
+    }
     const std::size_t n = static_cast<std::size_t>(rows * cols);
 
     const int sky_sub = (kSkyMicroCellsPerAxis > 1 && (cell_px_ % kSkyMicroCellsPerAxis) == 0)
@@ -266,6 +487,9 @@ void SfmlGameWindow::present(int rows, int cols, const std::vector<domain::Frame
                 continue;
             }
             const domain::FrameCell& cell = cells[i];
+            if (background_loaded_ && cell.ch == '.') {
+                continue;
+            }
             const int base_x = c * cell_px_;
             const int base_y = r * cell_px_;
 
@@ -290,7 +514,13 @@ void SfmlGameWindow::present(int rows, int cols, const std::vector<domain::Frame
     movement_particles_.update(dt, snap, cell_px_);
     movement_particles_.draw(window_);
 
+    combat_vfx_.update(dt, snap, cell_px_);
+    combat_vfx_.draw(window_);
+
+    drawEnemies(snap);
     drawBullets(snap);
+    drawPlayer(snap, dt);
+    drawBattleHud(snap);
     drawOverlay(snap);
     window_.display();
 }

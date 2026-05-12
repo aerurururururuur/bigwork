@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 namespace representation {
 
 /** Screen pixels per domain logical cell edge (square tiles, no stretch). */
@@ -15,5 +17,14 @@ inline constexpr int kSkyMicroCellsPerAxis = 2;
 inline constexpr int kMovementParticleCap = 256;
 /** New particles per frame when a grid step occurred (discrete move). */
 inline constexpr int kMovementParticlesSpawnOnStep = 4;
+
+/** Max combat burst particles (hit / death). */
+inline constexpr int kCombatVfxParticleCap = 320;
+
+/** World-units/sec: below this, enemy draw uses idle frame (matches movement epsilon order of magnitude). */
+inline constexpr float kEnemyAnimMoveEpsilonWorld = 0.02f;
+
+/** Snapshot `BulletView::enemy_bullet_sprite` when drawing Pebblin rock (see `domain::EnemyBulletSprite`). */
+inline constexpr std::uint8_t kEnemyBulletViewPebblinRock = 1;
 
 } // namespace representation

@@ -1,0 +1,155 @@
+#include "representation/player_sprite_animator.hpp"
+
+#include <algorithm>
+#include <cmath>
+
+namespace representation {
+
+namespace {
+
+constexpr float kRunSpeedEpsilon = 0.35f;
+
+constexpr float kFacingVxEpsilon = 0.02f;
+
+/** Linear scale vs previous tuning (1 = unchanged). */
+constexpr float kPlayerVisualSizeMultiplier = 4.f;
+
+/** Sprite height vs enemy circle diameter (2*pr): keep player visibly a bit larger. */
+constexpr float kPlayerHeightOverEnemyDisc = 1.1f;
+
+} // namespace
+
+const SpriteLinearClip& PlayerSpriteAnimator::active_clip() const {
+    static const SpriteLinearClip kEmpty{};
+    if (!cfg_ || !cfg_->valid) {
+        return kEmpty;
+    }
+    switch (mode_) {
+    case Mode::Run:
+        return cfg_->run;
+    case Mode::Death:
+        return cfg_->death;
+    case Mode::Idle:
+    default:
+        return cfg_->idle;
+    }
+}
+
+void PlayerSpriteAnimator::advance_looping(double dt, const SpriteLinearClip& clip) {
+    if (clip.frames.empty() || clip.fps <= 0.f) {
+        return;
+    }
+    frame_time_ += dt;
+    const double spf = 1.0 / static_cast<double>(clip.fps);
+    const int n = static_cast<int>(clip.frames.size());
+    while (frame_time_ >= spf && n > 0) {
+        frame_time_ -= spf;
+        frame_index_ = (frame_index_ + 1) % n;
+    }
+}
+
+void PlayerSpriteAnimator::advance_death(double dt) {
+    const SpriteLinearClip& clip = cfg_->death;
+    if (clip.frames.empty() || clip.fps <= 0.f) {
+        return;
+    }
+    if (death_settled_) {
+        return;
+    }
+    frame_time_ += dt;
+    const double spf = 1.0 / static_cast<double>(clip.fps);
+    const int last = static_cast<int>(clip.frames.size()) - 1;
+    while (frame_time_ >= spf) {
+        frame_time_ -= spf;
+        if (frame_index_ >= last) {
+            death_settled_ = true;
+            frame_index_ = last;
+            break;
+        }
+        ++frame_index_;
+    }
+}
+
+void PlayerSpriteAnimator::update(double dt, const application::RenderSnapshot& snap) {
+    if (!cfg_ || !cfg_->valid) {
+        return;
+    }
+
+    const bool want_death = snap.battle_outcome == application::BattleOutcomeView::Defeat && snap.player_hp <= 0;
+
+    if (want_death) {
+        if (mode_ != Mode::Death) {
+            mode_ = Mode::Death;
+            frame_index_ = 0;
+            frame_time_ = 0.0;
+            death_settled_ = false;
+        }
+        advance_death(dt);
+        return;
+    }
+
+    if (mode_ == Mode::Death) {
+        mode_ = Mode::Idle;
+        frame_index_ = 0;
+        frame_time_ = 0.0;
+        death_settled_ = false;
+    }
+
+    const float sp = snap.player_vx * snap.player_vx + snap.player_vy * snap.player_vy;
+    mode_ = (sp > kRunSpeedEpsilon * kRunSpeedEpsilon) ? Mode::Run : Mode::Idle;
+    if (snap.player_vx < -kFacingVxEpsilon) {
+        face_left_ = true;
+    } else if (snap.player_vx > kFacingVxEpsilon) {
+        face_left_ = false;
+    }
+    advance_looping(dt, active_clip());
+}
+
+sf::IntRect PlayerSpriteAnimator::texture_rect(unsigned texture_width, unsigned texture_height) const {
+    if (!cfg_ || !cfg_->valid || cfg_->columns <= 0 || cfg_->rows <= 0) {
+        return {};
+    }
+    const int fw = static_cast<int>(texture_width) / cfg_->columns;
+    const int fh = static_cast<int>(texture_height) / cfg_->rows;
+    if (fw <= 0 || fh <= 0) {
+        return {};
+    }
+
+    const SpriteLinearClip& clip = active_clip();
+    if (clip.frames.empty()) {
+        return {};
+    }
+    int idx = frame_index_;
+    if (mode_ == Mode::Death) {
+        idx = std::clamp(idx, 0, static_cast<int>(clip.frames.size()) - 1);
+        if (death_settled_) {
+            idx = static_cast<int>(clip.frames.size()) - 1;
+        }
+    } else {
+        idx = std::clamp(idx, 0, static_cast<int>(clip.frames.size()) - 1);
+    }
+
+    const SpriteFrameCell& fc = clip.frames[static_cast<std::size_t>(idx)];
+    return sf::IntRect(fc.col * fw, fc.row * fh, fw, fh);
+}
+
+void PlayerSpriteAnimator::apply_to_sprite(sf::Sprite& sprite, unsigned texture_width, unsigned texture_height,
+                                           int cell_px, float disc_radius_px) const {
+    const sf::IntRect rect = texture_rect(texture_width, texture_height);
+    if (rect.width <= 0 || rect.height <= 0 || !cfg_ || !cfg_->valid) {
+        return;
+    }
+    sprite.setTextureRect(rect);
+    const float frame_h = static_cast<float>(rect.height);
+    const float frame_w = static_cast<float>(rect.width);
+    const float cell_f = static_cast<float>(std::max(1, cell_px));
+    const float from_json = cfg_->scale_cells * cell_f;
+    const float from_disc = 2.f * disc_radius_px * kPlayerHeightOverEnemyDisc;
+    const float target_h = std::max(from_json, from_disc) * kPlayerVisualSizeMultiplier;
+    const float scale = target_h / std::max(1.f, frame_h);
+    const float sx = face_left_ ? -scale : scale;
+    sprite.setScale(sx, scale);
+    sprite.setOrigin(std::floor(frame_w * 0.5f), frame_h);
+}
+
+} // namespace representation

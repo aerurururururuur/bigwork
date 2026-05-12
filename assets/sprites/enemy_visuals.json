@@ -1,0 +1,30 @@
+{
+  "enemy_bullet_pebblin_rock": "assets/sprites/enemy/04.Pebblin/RockAttack.png",
+  "entries": [
+    {
+      "id": 0,
+      "idle": "assets/sprites/enemy/01.Slime/IdleSlime.png",
+      "move": "assets/sprites/enemy/01.Slime/WalkSlime.png",
+      "scale_vs_disc": 2.3
+    },
+    {
+      "id": 1,
+      "idle": "assets/sprites/enemy/02.BugBit/IdleBug.png",
+      "move": "assets/sprites/enemy/02.BugBit/WalkBug.png",
+      "scale_vs_disc": 2.3
+    },
+    {
+      "id": 2,
+      "idle": "assets/sprites/enemy/03.Spookmoth/FlySpookmoth.png",
+      "move": "assets/sprites/enemy/03.Spookmoth/FlySpookmoth.png",
+      "scale_vs_disc": 2.4
+    },
+    {
+      "id": 3,
+      "idle": "assets/sprites/enemy/04.Pebblin/IdlePebblin.png",
+      "move": "assets/sprites/enemy/04.Pebblin/IdlePebblin.png",
+      "melee_attack": "assets/sprites/enemy/04.Pebblin/AttackPebblin.png",
+      "scale_vs_disc": 2.35
+    }
+  ]
+}

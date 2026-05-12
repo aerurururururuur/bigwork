@@ -2,9 +2,11 @@
 name: roadside-stroll-cpp-architecture
 description: >-
   Guides C++ pixel top-down combat MVP: four-layer architecture, DTO boundaries,
-  IRandom/Seed, FrameTimer FPS+deltaTime, non-blocking input. Domain extends via
-  TileBase (floor/wall/obstacle) and CombatEntity (player/enemy/bullet); SFML
-  square tiles from RenderSnapshot. Legacy console ITerminal optional.
+  IRandom/Seed, FrameTimer FPS+deltaTime, non-blocking input. Domain: TileBase,
+  CombatEntity, World, IEnemyBehavior + combat ports. Application: RenderSnapshot
+  only to Rep. Representation: FrameComposer (tiles), data-driven JSON sprites
+  (SpriteSheetConfig / PlayerSpriteAnimator), SFML present order. Continuous
+  actor coords + grid walkable. Legacy console ITerminal optional.
 ---
 
 # 俯视角像素战斗（仓库沿用 skill 路径）
@@ -15,6 +17,37 @@ description: >-
 
 - **`TileBase`**（`src/domain/tile_base.hpp`）：地板 / 墙 / 障碍等**地形语义**的公共根；具体类 `FloorTile`、`WallTile`、`ObstacleTile`；`PlayfieldGrid` 存 `TileKind` 枚举并通过 `tilePrototype(TileKind)` 解析为只读 `TileBase&`（便于新增瓦片子类而不改网格存储）。
 - **`CombatEntity`**（`src/domain/combat_entities.hpp`）：**玩家 / 敌人 / 子弹** 等动态体的公共根；具体类 `PlayerActor`、`EnemyActor`、`BulletActor`；`World::simulateStep` 统一调度 `step(World&, double dt)`，新实体类型通过**继承 `CombatEntity`** 接入同一套步进与碰撞扩展点。
+- **`IEnemyBehavior` + `makeEnemyBehavior`**（`src/domain/enemy_behavior.*`）：敌人 AI **策略对象**，按 `EnemyArchetype` 装配；与 `World` 的 **`IBulletFirePort` / `IMeleeEngagePort`**（`combat_ports.hpp`）组合注入，避免在行为里硬编码 `World` 细节，便于单测与换 AI。
+- **`BulletActor` 体系**：`PlayerBulletActor` / `EnemyBulletActor` 共享弹道步进，命中策略由 `IBulletHitPolicy`（`bullet_hit_policy.*`）分派系解耦。
+
+## 高解耦与可复用模板（优先复用）
+
+以下模式已在仓库落地或推荐沿用；**换美术资源时优先改 JSON / 配置路径，少改 C++**。
+
+### 数据驱动精灵（Representation）
+
+| 组件 | 路径 | 职责 |
+|------|------|------|
+| **`SpriteSheetConfig`** | `representation/sprite_sheet_config.*` | 从 **`assets/sprites/player_sheet.json`** 解析图集：`texture`、`columns`、`rows`、`scale_cells`、`clips`（idle/run/death 段列表）。失败则 `valid == false`，调用方回退占位图。 |
+| **`PlayerSpriteAnimator`** | `representation/player_sprite_animator.*` | **只读 `RenderSnapshot`**：idle/run/death 状态机、`texture_rect`、`apply_to_sprite`（脚底原点、与敌圆直径下限 `2*pr` 取 max、可选全局倍率、水平翻转由 `player_vx`）。**不写死行列**：换角改 JSON。 |
+| **`SfmlGameWindow`** | `representation/sfml_game_window.*` | 构造期加载配置与纹理；`drawPlayer` 内 `update(dt,snap)` 再绘制；失败回退 `CircleShape`。 |
+
+**可复用要点**：同一套 **`SpriteSheetConfig::load_from_file` + `SpriteLinearClip`** 可拷贝思路做 **`enemy_sheet.json` / `enemy_visuals.json`**（敌人多为单图 idle/walk 路径表，不必与玩家同 schema）。解析器可用 **轻量 regex 子集**（见 `sprite_sheet_config.cpp`），避免为 MVP 引入重型 JSON 依赖。
+
+### 连续坐标 vs 网格权威
+
+- **Domain**：玩家 / 敌人 / 子弹用 **浮点世界单位**（格宽 1.0）；**可走性、撞墙** 仍由 **`PlayfieldGrid::walkable`** + 圆采样（`World::terrainCircleWalkable` 等）判定。
+- **Application**：`RenderSnapshot` 提供 `player_world_*`、`player_vx/vy`、`EnemyView` 浮点坐标等 **只读 DTO**；不重复积分物理。
+- **Representation**：逻辑像素 = 世界坐标 × `cell_px`；**勿**在 Rep 里改 Domain 状态。
+
+### 职业（AI）与外观（物种）分离（推荐）
+
+- **`EnemyArchetype`**：近战 / 远程 / 精英混合等 **规则与数值**（`configureForArchetype`、分数等）。
+- **物种 / 皮肤 ID**（若引入 `EnemySpriteId` 等）：**仅影响显示与资源路径**，与 `EnemyArchetype` **正交**；刷怪表 `(sprite_id → archetype)` 写在 Domain 或数据文件，避免用「职业枚举」硬编码贴图文件夹名。
+
+### 可选运行时配置
+
+- 仓库根提供 **`game_config.example.ini`**：可复制为 `game_config.ini` 置于工作目录（如 `build/Debug`），用于背景图等 **非核心玩法** 配置；**核心战斗随机与关卡权威仍在 Domain**。
 
 ## AI Agent Skills 列表（按四层归类）
 
@@ -58,10 +91,12 @@ description: >-
 
 | Skill | 职责 |
 |-------|------|
-| **SceneLayerRender** | `FrameComposer`：`RenderSnapshot` → `FrameCell` 色块 id（地/墙/障/敌/弹/玩家分层覆盖顺序）。 |
+| **SceneLayerRender** | `FrameComposer`：`RenderSnapshot` → **`FrameCell` 仅铺地/墙/障碍**；**不再**用格网画玩家/敌人（避免与浮点精灵错位）。 |
 | **KeyMappingTransform** | `RawInputSnapshot` → `GameCommand`（含 **`Fire`**）。 |
 | **ThemeStyleRender** | `color_id` → `colorFromId`；主题只改配色，**不改** Domain 语义。 |
 | **DialogUIPop** | `SfmlGameWindow` 最后绘制 `OverlayModel`（标题 / 结束面板）。 |
+| **SpriteSheetLoad** | `SpriteSheetConfig` + JSON；失败回退几何占位。 |
+| **ActorSpriteAnim** | `PlayerSpriteAnimator`：快照驱动动画与朝向。 |
 
 ### 逻辑格与屏幕像素
 
@@ -81,7 +116,8 @@ TileBase, PlayfieldGrid, CombatEntity, World, Seed, IRandom 端口
 GameApplication, RenderSnapshot, OverlayModel, GameCommand, GameState
   → application/
 
-FrameComposer, KeyMapping, ThemePalette, SfmlGameWindow
+FrameComposer, KeyMapping, ThemePalette, SfmlGameWindow, SpriteSheetConfig,
+  PlayerSpriteAnimator, movement_particles, combat_vfx_particles
   → representation/
 ```
 
@@ -105,18 +141,24 @@ Infrastructure → Domain
 
 ## 画面与坐标（当前 MVP）
 
-- 逻辑 **`Cols` × `Rows`** 近似 16:9；**整屏单房间**：墙体围边界，随机 `Obstacle`，玩家与敌人网格移动，子弹浮点飞行。
+- 逻辑 **`Cols` × `Rows`** 近似 16:9；**整屏单房间**：墙体围边界，随机 `Obstacle`；**玩家与敌人为连续坐标**（速度积分 + 格上网格碰撞）；子弹同连续坐标。
 - **Overlay**：不占玩法格；由 Application 填 `OverlayModel`。
+- **资源路径**：`assets/sprites/`、`assets/fonts/`；运行 **工作目录** 需能解析相对路径（IDE 常从 `build/Debug` 启动时需自带 `assets` 或拷贝）。
 
-## 帧合成顺序
+## 帧合成顺序（SFML `present`）
 
-`FrameComposer`：瓦片底色 → 敌人 → 子弹 → **玩家最上**；Overlay 在 `present` 末尾。
+1. `FrameComposer`：仅 **天空/地表瓦片** 色块。  
+2. 粒子（脚尘、受击 VFX 等）。  
+3. **敌人**（圆或精灵）→ **子弹** → **玩家**（最上层，含血条 HUD）。  
+4. **Overlay**（标题 / 结算）。  
+
+与早期「格网覆盖画敌/玩家」不同：**动态体一律在 SFML 层按世界坐标绘制**。
 
 ## 目录与 CMake（稳定骨架）
 
-- `src/domain/` — `tile_base.*`、`combat_entities.*`、`playfield.*`、`world.*`、端口、`seed.hpp`
+- `src/domain/` — `tile_base.*`、`combat_entities.*`、`playfield.*`、`world.*`、`enemy_behavior.*`、`bullet_hit_policy.*`、`score_state.*`、端口、`seed.hpp`
 - `src/application/` — `game_application.*`、`render_snapshot.hpp`、`overlay_layout.*`、`game_command.hpp`、`game_state.hpp`
-- `src/representation/` — `frame_composer.*`、`sfml_game_window.*`、`key_mapping.*`、`theme_palette.*`
+- `src/representation/` — `frame_composer.*`、`sfml_game_window.*`、`key_mapping.*`、`theme_palette.*`、`sprite_sheet_config.*`、`player_sprite_animator.*`、`movement_particles.*`、`combat_vfx_particles.*`
 - `src/infrastructure/` — `frame_timer.*`、`file_audit_sink.*`、`std_random.*` 等
 - `src/main.cpp` — 注入 `StdRandom` → `World`
 
@@ -138,6 +180,16 @@ Infrastructure → Domain
 - [ ] 随机是否只经 **`IRandom`**？
 - [ ] 主题是否只改 **`color_id` 映射**？
 - [ ] 输入是否**非阻塞**、主循环是否有 **FrameTimer**？
+- [ ] 新精灵是否 **JSON 可换路径**；Rep 是否在加载失败时 **回退占位**而不崩？
+- [ ] Domain 与 Rep **是否重复同一魔法数**（如近战距离阈值）；若必须重复是否在注释中写明「须与 `enemy_behavior` 同步」或抽到 **Domain 头文件常量** 由 Application 写入快照？
+
+## 注意事项（反模式与边界）
+
+1. **不要在 Representation 里 `#include` `world.hpp` 或改写 `EnemyActor`**；动画与贴图只依赖快照字段与本地时间累加器。  
+2. **`EnemyArchetype` 扩展（如预留 `Boss`）**：必须同步 `makeEnemyBehavior`、`configureForArchetype`、分数等所有 `switch`，避免未处理枚举；未实装前可用占位行为并标 `TODO`。  
+3. **子弹派系**：用 `BulletFaction` / `BulletFactionView` 区分绘制与命中策略，敌弹特殊贴图用 **快照枚举或 `uint8_t` 子类型**，避免在 Rep 里 `dynamic_cast` 跨 DLL/静态库边界（优先虚函数 `enemyBulletSprite()` 一类接口）。  
+4. **Letterbox / 鼠标瞄准**：逻辑坐标用 `mapPixelToCoords`；瞄准向量在 **Application** 写入 `PlayerIntent`，与精灵朝向解耦（朝向可读 `player_vx` 或后续快照字段）。  
+5. **CMake**：新增 `representation` 下 `.cpp` 须加入根 **`CMakeLists.txt`** 的 `roadside_representation` 源列表。
 
 ## 原始计划（本地）
 

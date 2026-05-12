@@ -1,53 +1,96 @@
 #include "domain/combat_entities.hpp"
+
+#include "domain/bullet_hit_policy.hpp"
+#include "domain/enemy_behavior.hpp"
+#include "domain/vec2.hpp"
 #include "domain/world.hpp"
 
+#include <algorithm>
 #include <cmath>
 
 namespace domain {
+
+namespace {
+
+constexpr float kPlayerSpeed = 6.0f;
+constexpr float kBulletSpeed = 9.0f;
+constexpr float kMuzzleOffset = 0.42f;
+
+} // namespace
+
+BulletActor::BulletActor(float x, float y, float vx, float vy, int damage,
+                         std::unique_ptr<IBulletHitPolicy> policy)
+    : x_(x), y_(y), vx_(vx), vy_(vy), damage_(damage), hit_policy_(std::move(policy)) {}
+
+BulletActor::~BulletActor() = default;
+
+PlayerBulletActor::PlayerBulletActor(float x, float y, float vx, float vy, int damage)
+    : BulletActor(x, y, vx, vy, damage, makeBulletHitPolicy(BulletFaction::Player)) {}
+
+EnemyBulletActor::EnemyBulletActor(float x, float y, float vx, float vy, int damage, EnemyBulletSprite sprite)
+    : BulletActor(x, y, vx, vy, damage, makeBulletHitPolicy(BulletFaction::Enemy)), sprite_(sprite) {}
+
+EnemyActor::~EnemyActor() = default;
 
 bool PlayerActor::destroyed() const noexcept {
     return hp_ <= 0;
 }
 
 void PlayerActor::step(World& world, double dt) {
-    move_cool_ -= dt;
+    bullet_invuln_rem_ = std::max(0.0, bullet_invuln_rem_ - dt);
     fire_cool_ -= dt;
 
     const PlayerIntent& in = world.frameIntent();
+    const float fdt = static_cast<float>(dt);
 
     if (in.move_dx != 0 || in.move_dy != 0) {
         last_fire_dx_ = in.move_dx;
         last_fire_dy_ = in.move_dy;
     }
 
-    if (move_cool_ <= 0.0 && (in.move_dx != 0 || in.move_dy != 0)) {
-        const int nx = gx_ + in.move_dx;
-        const int ny = gy_ + in.move_dy;
-        if (world.walkableNoActor(nx, ny) && !world.enemyAt(nx, ny)) {
-            gx_ = nx;
-            gy_ = ny;
-        }
-        move_cool_ = move_period_;
+    float mx = static_cast<float>(in.move_dx);
+    float my = static_cast<float>(in.move_dy);
+    if (mx != 0.f || my != 0.f) {
+        normalizeOrDefault(mx, my);
+        vx_ = mx * kPlayerSpeed;
+        vy_ = my * kPlayerSpeed;
+    } else {
+        vx_ = 0.f;
+        vy_ = 0.f;
+    }
+
+    const float nx = x_ + vx_ * fdt;
+    const float ny = y_ + vy_ * fdt;
+
+    if (world.playerFitsAt(nx, ny)) {
+        x_ = nx;
+        y_ = ny;
+    } else if (world.playerFitsAt(nx, y_)) {
+        x_ = nx;
+    } else if (world.playerFitsAt(x_, ny)) {
+        y_ = ny;
     }
 
     if (in.fire && fire_cool_ <= 0.0) {
-        constexpr float kBulletSpeed = 9.0f;
-        float vx = 0.f;
-        float vy = 0.f;
+        float bx = 0.f;
+        float by = 0.f;
         if (in.use_mouse_aim) {
-            vx = in.aim_nx * kBulletSpeed;
-            vy = in.aim_ny * kBulletSpeed;
+            bx = in.aim_nx;
+            by = in.aim_ny;
+            normalizeOrDefault(bx, by);
         } else {
             int dx = last_fire_dx_;
             int dy = last_fire_dy_;
             if (dx == 0 && dy == 0) {
                 dx = 1;
             }
-            const float len = std::sqrt(static_cast<float>(dx * dx + dy * dy));
-            vx = (static_cast<float>(dx) / len) * kBulletSpeed;
-            vy = (static_cast<float>(dy) / len) * kBulletSpeed;
+            bx = static_cast<float>(dx);
+            by = static_cast<float>(dy);
+            normalizeOrDefault(bx, by);
         }
-        world.spawnBullet(static_cast<float>(gx_) + 0.5f, static_cast<float>(gy_) + 0.5f, vx, vy, damage_);
+        const float ox = x_ + bx * kMuzzleOffset;
+        const float oy = y_ + by * kMuzzleOffset;
+        world.spawnPlayerBullet(ox, oy, bx * kBulletSpeed, by * kBulletSpeed, damage_);
         fire_cool_ = fire_period_;
     }
 }
@@ -56,58 +99,75 @@ bool EnemyActor::destroyed() const noexcept {
     return hp_ <= 0;
 }
 
-void EnemyActor::applyDamage(int amount) {
+void EnemyActor::configureForArchetype(EnemyArchetype a) {
+    archetype_ = a;
+    behavior_ = makeEnemyBehavior(a);
+    enemy_fire_cool_ = 0.0;
+    switch (a) {
+    case EnemyArchetype::Melee:
+        max_hp_ = hp_ = 5;
+        enemy_fire_period_ = 1.0;
+        break;
+    case EnemyArchetype::Ranged:
+        max_hp_ = hp_ = 3;
+        enemy_fire_period_ = 0.82;
+        break;
+    case EnemyArchetype::EliteHybrid:
+        max_hp_ = hp_ = 10;
+        enemy_fire_period_ = 0.55;
+        break;
+    case EnemyArchetype::Boss:
+        max_hp_ = hp_ = 40;
+        enemy_fire_period_ = 0.45;
+        break;
+    default:
+        max_hp_ = hp_ = 10;
+        enemy_fire_period_ = 0.55;
+        break;
+    }
+}
+
+void EnemyActor::resetForSpawn(EnemyArchetype a, EnemySpriteId id) {
+    sprite_id_ = id;
+    configureForArchetype(a);
+}
+
+void EnemyActor::applyDamage(int amount, World* world) {
+    if (hp_ <= 0) {
+        return;
+    }
     hp_ -= amount;
     if (hp_ < 0) {
         hp_ = 0;
     }
+    if (hp_ == 0 && world != nullptr) {
+        world->notifyEnemyKilled(*this);
+    }
+}
+
+void EnemyActor::integrateVelocity(World& world, float mx, float my, float dt) {
+    last_anim_vx_ = mx;
+    last_anim_vy_ = my;
+    const float nx = x_ + mx * dt;
+    const float ny = y_ + my * dt;
+    if (world.enemyFitsAt(nx, ny, this)) {
+        x_ = nx;
+        y_ = ny;
+    } else if (world.enemyFitsAt(nx, y_, this)) {
+        x_ = nx;
+    } else if (world.enemyFitsAt(x_, ny, this)) {
+        y_ = ny;
+    }
 }
 
 void EnemyActor::step(World& world, double dt) {
-    move_cool_ -= dt;
-    if (move_cool_ > 0.0) {
-        return;
+    if (!behavior_) {
+        configureForArchetype(archetype_);
     }
-
-    const int pgx = world.player().gx();
-    const int pgy = world.player().gy();
-    const int md = std::abs(gx_ - pgx) + std::abs(gy_ - pgy);
-
-    int dx = 0;
-    int dy = 0;
-    if (md <= 10) {
-        if (std::abs(pgx - gx_) >= std::abs(pgy - gy_)) {
-            dx = (pgx > gx_) ? 1 : (pgx < gx_) ? -1 : 0;
-        } else {
-            dy = (pgy > gy_) ? 1 : (pgy < gy_) ? -1 : 0;
-        }
-    } else {
-        dx = world.random().uniformInt(-1, 1);
-        dy = world.random().uniformInt(-1, 1);
-        if (dx == 0 && dy == 0) {
-            dx = 1;
-        }
-    }
-
-    const int nx = gx_ + dx;
-    const int ny = gy_ + dy;
-    if (world.walkableNoActor(nx, ny) && !(nx == pgx && ny == pgy)) {
-        bool blocked = false;
-        for (const auto& o : world.enemies()) {
-            if (!o || o.get() == this) {
-                continue;
-            }
-            if (o->hp() > 0 && o->gx() == nx && o->gy() == ny) {
-                blocked = true;
-                break;
-            }
-        }
-        if (!blocked) {
-            gx_ = nx;
-            gy_ = ny;
-        }
-    }
-    move_cool_ = move_period_;
+    CombatActorPorts ports;
+    ports.fire = static_cast<IBulletFirePort*>(&world);
+    ports.melee = static_cast<IMeleeEngagePort*>(&world);
+    behavior_->tick(*this, ports, world, dt);
 }
 
 bool BulletActor::destroyed() const noexcept {
@@ -123,21 +183,18 @@ void BulletActor::step(World& world, double dt) {
 
     const int gx = static_cast<int>(std::floor(x_));
     const int gy = static_cast<int>(std::floor(y_));
-
-    if (!world.walkableNoActor(gx, gy)) {
+    if (!world.playfield().inBounds(gx, gy)) {
         dead_ = true;
         return;
     }
 
-    for (auto& e : world.enemies_) {
-        if (!e || e->hp() <= 0) {
-            continue;
-        }
-        if (e->gx() == gx && e->gy() == gy) {
-            e->applyDamage(std::max(1, damage_));
-            dead_ = true;
-            return;
-        }
+    if (!world.terrainCircleWalkable(x_, y_, kBulletBodyRadius)) {
+        dead_ = true;
+        return;
+    }
+
+    if (hit_policy_->resolveActorHits(*this, world)) {
+        dead_ = true;
     }
 }
 

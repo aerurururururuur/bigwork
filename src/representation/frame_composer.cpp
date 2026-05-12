@@ -16,17 +16,6 @@ std::uint8_t tileColor(application::ThemeStyle t, char ch) {
     }
 }
 
-std::uint8_t enemyColor(std::uint8_t kind) {
-    switch (kind % 3) {
-    case 0:
-        return 43;
-    case 1:
-        return 44;
-    default:
-        return 45;
-    }
-}
-
 } // namespace
 
 namespace representation {
@@ -49,15 +38,6 @@ std::vector<domain::FrameCell> FrameComposer::compose(const application::RenderS
                 }
             }
             cell.color_id = tileColor(snap.theme, tch);
-
-            for (const auto& e : snap.enemies) {
-                if (e.x == c && e.y == r) {
-                    cell.color_id = enemyColor(e.kind);
-                }
-            }
-            if (c == snap.player_x && r == snap.player_y) {
-                cell.color_id = 47;
-            }
 
             out[static_cast<std::size_t>(r * C + c)] = cell;
         }

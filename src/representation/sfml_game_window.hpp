@@ -3,10 +3,16 @@
 #include "application/render_snapshot.hpp"
 #include "domain/ports/iterminal.hpp"
 #include "domain/raw_input.hpp"
+#include "representation/combat_vfx_particles.hpp"
+#include "representation/enemy_visual_resources.hpp"
 #include "representation/movement_particles.hpp"
+#include "representation/player_sprite_animator.hpp"
+#include "representation/sprite_sheet_config.hpp"
 
 #include <SFML/Graphics.hpp>
 
+#include <filesystem>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -15,13 +21,17 @@ namespace representation {
 /** Standalone SFML window: polls input and presents a scaled logical pixel grid (solid fills). */
 class SfmlGameWindow {
 public:
-    SfmlGameWindow(int logical_cols, int logical_rows, int cell_px);
+    /** @param background_image_path optional PNG/JPG; stretched to full logical client area. */
+    SfmlGameWindow(int logical_cols, int logical_rows, int cell_px,
+                   std::optional<std::filesystem::path> background_image_path = std::nullopt);
 
     bool isOpen() const;
     /** Returns false when the user closed the window. */
     bool pollInput(domain::RawInputSnapshot& out, const application::RenderSnapshot& view);
     void present(int rows, int cols, const std::vector<domain::FrameCell>& cells,
                    const application::RenderSnapshot& snap, double dt);
+
+    bool customBackgroundReady() const noexcept { return background_loaded_; }
 
 private:
     bool loadFont();
@@ -31,9 +41,13 @@ private:
     bool mouseInputActive() const;
 
     void drawOverlay(const application::RenderSnapshot& snap);
+    void drawEnemies(const application::RenderSnapshot& snap);
     void drawBullets(const application::RenderSnapshot& snap);
+    void drawPlayer(const application::RenderSnapshot& snap, double dt);
+    void drawBattleHud(const application::RenderSnapshot& snap);
 
     MovementParticleSystem movement_particles_;
+    CombatVfxParticleSystem combat_vfx_;
 
     sf::RenderWindow window_;
     sf::Font font_;
@@ -45,7 +59,21 @@ private:
     sf::RectangleShape micro_rect_;
     sf::RectangleShape overlay_rect_;
     sf::RectangleShape bullet_shape_;
+    sf::CircleShape actor_circle_{32};
     sf::Text overlay_text_;
+
+    SpriteSheetConfig player_sheet_cfg_{};
+    sf::Texture player_texture_{};
+    sf::Sprite player_sprite_{};
+    PlayerSpriteAnimator player_anim_{};
+    bool player_sprite_ready_{false};
+
+    EnemyVisualResources enemy_visuals_;
+    sf::Sprite enemy_draw_sprite_{};
+
+    sf::Texture background_texture_{};
+    sf::Sprite background_sprite_{};
+    bool background_loaded_{false};
 };
 
 } // namespace representation
