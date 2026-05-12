@@ -68,10 +68,18 @@ struct RenderSnapshot {
     float player_world_y{0.f};
     float player_vx{0.f};
     float player_vy{0.f};
+    /** Enemy / fallback disc radius in world units (matches `kActorBodyRadius`). */
     float actor_radius_world{0.35f};
+    /** Player physics / HUD disc radius (matches `kPlayerBodyRadius`, smaller than enemies). */
+    float player_body_radius_world{0.26f};
     float elite_melee_manhattan_tiles{4.f};
     int player_hp{0};
     int player_hp_max{0};
+    int player_mp{0};
+    int player_mp_max{0};
+    /** Skill overlay animation; `total <= 0` means idle/run/death clips only. */
+    float player_skill_anim_remaining{0.f};
+    float player_skill_anim_total{0.f};
     std::vector<EnemyView> enemies;
     std::vector<BulletView> bullets;
     int score{0};
@@ -81,6 +89,9 @@ struct RenderSnapshot {
     ThemeStyle theme{ThemeStyle::Dusk};
     BattleOutcomeView battle_outcome{BattleOutcomeView::None};
     OverlayModel overlay;
+
+    /** True when any living enemy uses the Boss archetype (for BGM track selection). */
+    bool battle_has_boss_enemy{false};
 
     /** True only during active battle (for foot-dust etc.); title/victory/defeat false. */
     bool gameplay_active{false};

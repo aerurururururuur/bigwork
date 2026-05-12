@@ -2,6 +2,7 @@
 
 #include "domain/bullet_hit_policy.hpp"
 #include "domain/enemy_behavior.hpp"
+#include "domain/skill.hpp"
 #include "domain/vec2.hpp"
 #include "domain/world.hpp"
 
@@ -13,8 +14,8 @@ namespace domain {
 namespace {
 
 constexpr float kPlayerSpeed = 6.0f;
-constexpr float kBulletSpeed = 9.0f;
-constexpr float kMuzzleOffset = 0.42f;
+constexpr int kPlayerFireMpCost = 1;
+constexpr double kPlayerMpRegenPerSec = 6.0;
 
 } // namespace
 
@@ -36,9 +37,20 @@ bool PlayerActor::destroyed() const noexcept {
     return hp_ <= 0;
 }
 
+void PlayerActor::resetSkillState() {
+    skill_slot_cd_.fill(0.0);
+    skill_anim_rem_ = 0.0;
+    skill_anim_total_ = 0.0;
+}
+
 void PlayerActor::step(World& world, double dt) {
     bullet_invuln_rem_ = std::max(0.0, bullet_invuln_rem_ - dt);
     fire_cool_ -= dt;
+
+    mp_regen_carry_ += kPlayerMpRegenPerSec * dt;
+    const int gain = static_cast<int>(mp_regen_carry_);
+    mp_regen_carry_ -= static_cast<double>(gain);
+    mp_ = std::min(max_mp_, mp_ + gain);
 
     const PlayerIntent& in = world.frameIntent();
     const float fdt = static_cast<float>(dt);
@@ -71,7 +83,7 @@ void PlayerActor::step(World& world, double dt) {
         y_ = ny;
     }
 
-    if (in.fire && fire_cool_ <= 0.0) {
+    if (in.fire && fire_cool_ <= 0.0 && mp_ >= kPlayerFireMpCost) {
         float bx = 0.f;
         float by = 0.f;
         if (in.use_mouse_aim) {
@@ -88,10 +100,37 @@ void PlayerActor::step(World& world, double dt) {
             by = static_cast<float>(dy);
             normalizeOrDefault(bx, by);
         }
-        const float ox = x_ + bx * kMuzzleOffset;
-        const float oy = y_ + by * kMuzzleOffset;
-        world.spawnPlayerBullet(ox, oy, bx * kBulletSpeed, by * kBulletSpeed, damage_);
+        const float cx = x_;
+        const float cy = y_ - player_shot::kFeetToCenterWorld;
+        const float ox = cx + bx * player_shot::kMuzzleOffsetWorld;
+        const float oy = cy + by * player_shot::kMuzzleOffsetWorld;
+        world.spawnPlayerBullet(ox, oy, bx * player_shot::kBulletSpeed, by * player_shot::kBulletSpeed, damage_);
+        mp_ -= kPlayerFireMpCost;
         fire_cool_ = fire_period_;
+    }
+
+    for (double& cd : skill_slot_cd_) {
+        cd = std::max(0.0, cd - dt);
+    }
+    if (skill_anim_rem_ > 0.0) {
+        skill_anim_rem_ = std::max(0.0, skill_anim_rem_ - dt);
+        if (skill_anim_rem_ <= 0.0) {
+            skill_anim_total_ = 0.0;
+        }
+    }
+
+    if (in.skill_q && skill_slot_cd_[0] <= 0.0) {
+        const ISkill& sk = ringBurstSkill();
+        if (mp_ >= sk.mpCost()) {
+            mp_ -= sk.mpCost();
+            skill_slot_cd_[0] += sk.cooldownSeconds();
+            SkillCastContext ctx{world, SkillCasterKind::Player, this, nullptr, x_, y_, damage_};
+            sk.execute(ctx);
+            constexpr double kSkillAnimFps = 12.0;
+            constexpr int kSkillAnimFrames = 3;
+            skill_anim_total_ = static_cast<double>(kSkillAnimFrames) / kSkillAnimFps;
+            skill_anim_rem_ = skill_anim_total_;
+        }
     }
 }
 

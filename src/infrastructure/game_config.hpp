@@ -10,7 +10,9 @@ struct GameConfig {
     std::optional<std::filesystem::path> background_image;
     /** First non-empty `music_bgm=` from INI, if any (resolved to absolute when possible). */
     std::optional<std::filesystem::path> music_bgm;
-    /** Parsed `music_volume=` 0–100; default 70 when key absent or invalid. */
+    /** Optional `music_bgm_boss=`; when absent, boss phase uses `music_bgm` if available. */
+    std::optional<std::filesystem::path> music_bgm_boss;
+    /** Parsed `music_volume=` 0-100; default 70 when key absent or invalid. */
     int music_volume{70};
 };
 

@@ -30,6 +30,9 @@ int main() {
     if (game_cfg.music_bgm.has_value()) {
         audit.write("BOOT", std::string("game_config music_bgm=") + game_cfg.music_bgm->string());
     }
+    if (game_cfg.music_bgm_boss.has_value()) {
+        audit.write("BOOT", std::string("game_config music_bgm_boss=") + game_cfg.music_bgm_boss->string());
+    }
 
     infrastructure::FrameTimer timer(60.0);
     domain::Seed seed{42};
@@ -44,11 +47,17 @@ int main() {
 
     representation::BgMusicController bgm;
     if (game_cfg.music_bgm.has_value()) {
-        if (!bgm.open(*game_cfg.music_bgm)) {
+        if (!bgm.openNormalTrack(*game_cfg.music_bgm)) {
             audit.write("BOOT", std::string("music_bgm open failed path=") + game_cfg.music_bgm->string());
-        } else {
-            bgm.setVolume(static_cast<float>(game_cfg.music_volume));
         }
+    }
+    if (game_cfg.music_bgm_boss.has_value()) {
+        if (!bgm.openBossTrack(*game_cfg.music_bgm_boss)) {
+            audit.write("BOOT", std::string("music_bgm_boss open failed path=") + game_cfg.music_bgm_boss->string());
+        }
+    }
+    if (bgm.hasAnyTrack()) {
+        bgm.setVolume(static_cast<float>(game_cfg.music_volume));
     }
 
     audit.write("BOOT", "pixel arena combat window starting.");
@@ -63,8 +72,8 @@ int main() {
         }
         const std::vector<application::GameCommand> cmds = representation::mapRawInput(raw);
         app.tick(dt, cmds, raw);
-        bgm.syncBattleOnly(app.state() == application::GameState::Battle);
         snap = app.buildSnapshot();
+        bgm.syncBattleTracks(app.state() == application::GameState::Battle, snap.battle_has_boss_enemy);
         const std::vector<domain::FrameCell> frame = composer.compose(snap);
         window.present(snap.total_rows, snap.total_cols, frame, snap, dt);
     }

@@ -36,6 +36,8 @@ private:
     bool death_settled_{false};
     /** Horizontal flip: true when last significant move was left (vx < 0). */
     bool face_left_{false};
+    /** -1: use idle/run/death clip; else column 2 rows 1..3 from player sheet (skill overlay). */
+    int skill_overlay_frame_{-1};
 };
 
 } // namespace representation

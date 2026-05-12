@@ -12,7 +12,7 @@ constexpr float kRunSpeedEpsilon = 0.35f;
 constexpr float kFacingVxEpsilon = 0.02f;
 
 /** Linear scale vs previous tuning (1 = unchanged). */
-constexpr float kPlayerVisualSizeMultiplier = 4.f;
+constexpr float kPlayerVisualSizeMultiplier = 3.2f;
 
 /** Sprite height vs enemy circle diameter (2*pr): keep player visibly a bit larger. */
 constexpr float kPlayerHeightOverEnemyDisc = 1.1f;
@@ -78,6 +78,7 @@ void PlayerSpriteAnimator::update(double dt, const application::RenderSnapshot& 
     const bool want_death = snap.battle_outcome == application::BattleOutcomeView::Defeat && snap.player_hp <= 0;
 
     if (want_death) {
+        skill_overlay_frame_ = -1;
         if (mode_ != Mode::Death) {
             mode_ = Mode::Death;
             frame_index_ = 0;
@@ -93,6 +94,15 @@ void PlayerSpriteAnimator::update(double dt, const application::RenderSnapshot& 
         frame_index_ = 0;
         frame_time_ = 0.0;
         death_settled_ = false;
+    }
+
+    if (snap.player_skill_anim_total > 1e-5f && snap.player_skill_anim_remaining > 1e-5f) {
+        const float elapsed = snap.player_skill_anim_total - snap.player_skill_anim_remaining;
+        const float spf = snap.player_skill_anim_total / 3.f;
+        skill_overlay_frame_ =
+            std::clamp(static_cast<int>(std::floor(elapsed / std::max(1e-5f, spf))), 0, 2);
+    } else {
+        skill_overlay_frame_ = -1;
     }
 
     const float sp = snap.player_vx * snap.player_vx + snap.player_vy * snap.player_vy;
@@ -113,6 +123,13 @@ sf::IntRect PlayerSpriteAnimator::texture_rect(unsigned texture_width, unsigned 
     const int fh = static_cast<int>(texture_height) / cfg_->rows;
     if (fw <= 0 || fh <= 0) {
         return {};
+    }
+
+    if (skill_overlay_frame_ >= 0) {
+        constexpr int kSkillCol = 2;
+        constexpr int kSkillRow0 = 1;
+        const int row = kSkillRow0 + skill_overlay_frame_;
+        return sf::IntRect(kSkillCol * fw, row * fh, fw, fh);
     }
 
     const SpriteLinearClip& clip = active_clip();

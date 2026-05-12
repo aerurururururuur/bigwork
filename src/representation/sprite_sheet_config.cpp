@@ -214,4 +214,80 @@ SpriteSheetConfig SpriteSheetConfig::load_from_file(const std::string& path) {
     return cfg;
 }
 
+EnemySheetConfig EnemySheetConfig::load_from_file(const std::string& path) {
+    EnemySheetConfig cfg;
+    const std::string json = read_text_file(path);
+    if (json.empty()) {
+        cfg.load_error = "cannot read file: " + path;
+        return cfg;
+    }
+
+    try {
+        std::smatch m;
+        if (!std::regex_search(json, m, std::regex("\"texture\"\\s*:\\s*\"([^\"]+)\""))) {
+            cfg.load_error = "missing texture";
+            return cfg;
+        }
+        cfg.texture_path = m[1].str();
+
+        if (!std::regex_search(json, m, std::regex("\"columns\"\\s*:\\s*(\\d+)"))) {
+            cfg.load_error = "missing columns";
+            return cfg;
+        }
+        cfg.columns = std::stoi(m[1].str());
+
+        if (!std::regex_search(json, m, std::regex("\"rows\"\\s*:\\s*(\\d+)"))) {
+            cfg.load_error = "missing rows";
+            return cfg;
+        }
+        cfg.rows = std::stoi(m[1].str());
+
+        cfg.scale_vs_disc = 2.2f;
+        if (std::regex_search(json, m, std::regex("\"scale_vs_disc\"\\s*:\\s*([0-9.+-eE]+)"))) {
+            cfg.scale_vs_disc = static_cast<float>(std::stod(m[1].str()));
+        }
+
+        if (cfg.columns <= 0 || cfg.rows <= 0) {
+            cfg.load_error = "columns/rows must be positive";
+            return cfg;
+        }
+
+        std::string err;
+        if (!parse_simple_clip(json, "idle", cfg.columns, cfg.rows, cfg.idle, err)) {
+            cfg.load_error = err;
+            return cfg;
+        }
+        if (!parse_simple_clip(json, "move", cfg.columns, cfg.rows, cfg.move, err)) {
+            cfg.load_error = err;
+            return cfg;
+        }
+        {
+            SpriteLinearClip tmp{};
+            if (parse_simple_clip(json, "melee_attack", cfg.columns, cfg.rows, tmp, err) && !tmp.frames.empty()) {
+                cfg.melee = tmp;
+                cfg.has_melee = true;
+            } else {
+                cfg.melee = SpriteLinearClip{};
+                cfg.has_melee = false;
+            }
+        }
+
+        if (cfg.idle.fps <= 0.f || cfg.move.fps <= 0.f) {
+            cfg.load_error = "fps must be positive";
+            return cfg;
+        }
+        if (cfg.has_melee && cfg.melee.fps <= 0.f) {
+            cfg.load_error = "melee fps must be positive";
+            return cfg;
+        }
+    } catch (const std::exception& ex) {
+        cfg.load_error = ex.what();
+        return cfg;
+    }
+
+    cfg.valid = true;
+    cfg.load_error.clear();
+    return cfg;
+}
+
 } // namespace representation

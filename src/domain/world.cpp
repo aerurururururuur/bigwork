@@ -1,6 +1,7 @@
 #include "domain/world.hpp"
 
 #include "domain/bullet_faction.hpp"
+#include "domain/enemy_archetype.hpp"
 #include "domain/enemy_behavior.hpp"
 #include "domain/enemy_sprite_id.hpp"
 #include "domain/tile_base.hpp"
@@ -72,7 +73,7 @@ bool World::overlapsEnemiesCircle(float cx, float cy, float r, const EnemyActor*
 }
 
 bool World::overlapsPlayerCircle(float cx, float cy, float r) const {
-    const float rr = r + kActorBodyRadius;
+    const float rr = r + kPlayerBodyRadius;
     const float rr_sq = rr * rr;
     const float dx = player_.x_ - cx;
     const float dy = player_.y_ - cy;
@@ -80,8 +81,8 @@ bool World::overlapsPlayerCircle(float cx, float cy, float r) const {
 }
 
 bool World::playerFitsAt(float x, float y) const {
-    return terrainCircleWalkable(x, y, kActorBodyRadius) &&
-           !overlapsEnemiesCircle(x, y, kActorBodyRadius, nullptr);
+    return terrainCircleWalkable(x, y, kPlayerBodyRadius) &&
+           !overlapsEnemiesCircle(x, y, kPlayerBodyRadius, nullptr);
 }
 
 bool World::enemyFitsAt(float x, float y, const EnemyActor* self) const {
@@ -96,6 +97,8 @@ World::World(IRandom& rng) : rng_(rng) {
     player_.x_ = static_cast<float>(w) * 0.5f;
     player_.y_ = static_cast<float>(h) * 0.5f;
     player_.hp_ = player_.max_hp_;
+    player_.mp_ = player_.max_mp_;
+    player_.mp_regen_carry_ = 0.0;
     player_.fire_cool_ = 0.0;
     player_.last_fire_dx_ = 1;
     player_.last_fire_dy_ = 0;
@@ -111,16 +114,20 @@ void World::resetBattle() {
     vfx_pending_.clear();
     score_.reset();
     playfield_ = PlayfieldGrid{};
+    boss_released_ = false;
 
     const int w = playfield_.width();
     const int h = playfield_.height();
     player_.x_ = static_cast<float>(w) * 0.5f;
     player_.y_ = static_cast<float>(h) * 0.5f;
     player_.hp_ = player_.max_hp_;
+    player_.mp_ = player_.max_mp_;
+    player_.mp_regen_carry_ = 0.0;
     player_.fire_cool_ = 0.0;
     player_.last_fire_dx_ = 1;
     player_.last_fire_dy_ = 0;
     player_.bullet_invuln_rem_ = 0.0;
+    player_.resetSkillState();
 
     scatterObstacles();
     spawnEnemies();
@@ -173,6 +180,71 @@ void World::spawnEnemies() {
     }
 }
 
+void World::maybeSpawnBossAfterWaveClear() {
+    if (boss_released_) {
+        return;
+    }
+    for (const auto& e : enemies_) {
+        if (e && e->hp() > 0) {
+            return;
+        }
+    }
+
+    auto try_spawn = [this](float min_manhattan) -> bool {
+        for (int tries = 0; tries < kEnemySpawnMaxTries; ++tries) {
+            const int x = rng_.uniformInt(1, playfield_.width() - 2);
+            const int y = rng_.uniformInt(1, playfield_.height() - 2);
+            if (!playfield_.walkable(x, y)) {
+                continue;
+            }
+            const float ex = static_cast<float>(x) + kPlayerSpawnInset;
+            const float ey = static_cast<float>(y) + kPlayerSpawnInset;
+            const float md = std::abs(ex - player_.x_) + std::abs(ey - player_.y_);
+            if (md < min_manhattan) {
+                continue;
+            }
+            if (!enemyFitsAt(ex, ey, nullptr)) {
+                continue;
+            }
+            auto boss = std::make_unique<EnemyActor>();
+            boss->x_ = ex;
+            boss->y_ = ey;
+            boss->resetForSpawn(EnemyArchetype::Boss, EnemySpriteId::Pebblin);
+            enemies_.push_back(std::move(boss));
+            return true;
+        }
+        return false;
+    };
+
+    if (try_spawn(kSpawnEnemyManhattanMin)) {
+        boss_released_ = true;
+        return;
+    }
+    if (try_spawn(4.f)) {
+        boss_released_ = true;
+        return;
+    }
+    for (int y = 1; y < playfield_.height() - 1; ++y) {
+        for (int x = 1; x < playfield_.width() - 1; ++x) {
+            if (!playfield_.walkable(x, y)) {
+                continue;
+            }
+            const float ex = static_cast<float>(x) + kPlayerSpawnInset;
+            const float ey = static_cast<float>(y) + kPlayerSpawnInset;
+            if (!enemyFitsAt(ex, ey, nullptr)) {
+                continue;
+            }
+            auto boss = std::make_unique<EnemyActor>();
+            boss->x_ = ex;
+            boss->y_ = ey;
+            boss->resetForSpawn(EnemyArchetype::Boss, EnemySpriteId::Pebblin);
+            enemies_.push_back(std::move(boss));
+            boss_released_ = true;
+            return;
+        }
+    }
+}
+
 void World::simulateStep(double dt) {
     if (outcome_ != BattleOutcome::None) {
         return;
@@ -195,6 +267,7 @@ void World::simulateStep(double dt) {
     cullDynamics();
     applyContactDamage(dt);
     score_.tick(dt);
+    maybeSpawnBossAfterWaveClear();
     evaluateBattleOutcome();
 }
 
@@ -320,7 +393,7 @@ void World::applyContactDamage(double dt) {
     // Separation keeps centers near 2*r, but sliding + timestep often leaves dist_sq > (2r)^2,
     // so add slack or contact damage rarely triggers despite visible proximity.
     constexpr float kMeleeContactSlack = 0.16f;
-    const float touch_r = 2.f * kActorBodyRadius + kMeleeContactSlack;
+    const float touch_r = kPlayerBodyRadius + kActorBodyRadius + kMeleeContactSlack;
     const float touch_sq = touch_r * touch_r;
     for (const auto& e : enemies_) {
         if (!e || e->hp() <= 0) {

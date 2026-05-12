@@ -88,6 +88,8 @@ GameConfig loadGameConfigFromIni(const std::filesystem::path& path) {
             cfg.background_image = std::filesystem::path(val);
         } else if (key == "music_bgm" && !val.empty() && !cfg.music_bgm.has_value()) {
             cfg.music_bgm = std::filesystem::path(val);
+        } else if (key == "music_bgm_boss" && !val.empty() && !cfg.music_bgm_boss.has_value()) {
+            cfg.music_bgm_boss = std::filesystem::path(val);
         } else if (key == "music_volume" && !val.empty()) {
             try {
                 const int v = std::stoi(val);
@@ -113,6 +115,9 @@ GameConfig loadGameConfigAuto() {
         }
         if (cfg.music_bgm.has_value()) {
             cfg.music_bgm = resolveAssetFile(*cfg.music_bgm, ini);
+        }
+        if (cfg.music_bgm_boss.has_value()) {
+            cfg.music_bgm_boss = resolveAssetFile(*cfg.music_bgm_boss, ini);
         }
         return cfg;
     }

@@ -5,6 +5,7 @@
 #include "domain/enemy_bullet_sprite.hpp"
 #include "domain/enemy_sprite_id.hpp"
 
+#include <array>
 #include <cstdint>
 #include <memory>
 
@@ -14,10 +15,24 @@ class IBulletHitPolicy;
 class IEnemyBehavior;
 class World;
 
-/** Body radius in grid units (player / enemies / bullet hit). */
+/** Body radius in grid units for enemies (terrain / each other / melee vs player bullet math baseline). */
 inline constexpr float kActorBodyRadius = 0.35f;
-/** Bullet collision radius in grid units. */
+/** Smaller player hitbox so the body fits through single-tile gaps more reliably. */
+inline constexpr float kPlayerBodyRadius = 0.26f;
+/**
+ * Enemy radius used only for **player bullet** hit tests: larger than `kActorBodyRadius` so hits match
+ * visible sprite overlap (Representation draws enemies bigger than this physics disc).
+ */
+inline constexpr float kEnemyPlayerBulletHitRadius = 0.54f;
+/** Bullet collision radius in world units. */
 inline constexpr float kBulletBodyRadius = 0.12f;
+
+/** Shared tuning for player-fired bullets (basic shot and skills). */
+namespace player_shot {
+inline constexpr float kBulletSpeed = 9.0f;
+inline constexpr float kFeetToCenterWorld = 0.38f;
+inline constexpr float kMuzzleOffsetWorld = 0.06f;
+} // namespace player_shot
 
 struct PlayerIntent {
     int move_dx{0};
@@ -27,6 +42,8 @@ struct PlayerIntent {
     bool use_mouse_aim{false};
     float aim_nx{0.f};
     float aim_ny{0.f};
+    /** Edge-triggered skill (Q); consumed same frame by `PlayerActor::step`. */
+    bool skill_q{false};
 };
 
 /** Dynamic entities (player, foes, shots) share this extension root. */
@@ -48,9 +65,17 @@ public:
     float vy() const { return vy_; }
     int hp() const { return hp_; }
     int maxHp() const { return max_hp_; }
+    int mp() const { return mp_; }
+    int maxMp() const { return max_mp_; }
     int lastFireDirX() const { return last_fire_dx_; }
     int lastFireDirY() const { return last_fire_dy_; }
     double bulletInvulnRemaining() const { return bullet_invuln_rem_; }
+    int shotDamage() const { return damage_; }
+
+    double skillAnimRemaining() const { return skill_anim_rem_; }
+    double skillAnimTotal() const { return skill_anim_total_; }
+
+    void resetSkillState();
 
 private:
     friend class World;
@@ -61,6 +86,9 @@ private:
     float vy_{0.f};
     int hp_{10};
     int max_hp_{10};
+    int mp_{30};
+    int max_mp_{30};
+    double mp_regen_carry_{0.0};
     int armor_{0};
     int damage_{1};
     double fire_period_{0.28};
@@ -69,6 +97,11 @@ private:
     int last_fire_dy_{0};
     /** Separate from melee contact i-frame (managed on World). */
     double bullet_invuln_rem_{0.0};
+
+    static constexpr int kSkillSlotCount = 4;
+    std::array<double, kSkillSlotCount> skill_slot_cd_{};
+    double skill_anim_rem_{0.0};
+    double skill_anim_total_{0.0};
 };
 
 class IEnemyBehavior;

@@ -11,6 +11,7 @@
 
 #include <SFML/Graphics.hpp>
 
+#include <array>
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -70,6 +71,8 @@ private:
 
     EnemyVisualResources enemy_visuals_;
     sf::Sprite enemy_draw_sprite_{};
+    /** Per `EnemySpriteId` species: looping animation clock for sheet clips. */
+    std::array<double, 4> enemy_species_anim_time_{};
 
     sf::Texture background_texture_{};
     sf::Sprite background_sprite_{};

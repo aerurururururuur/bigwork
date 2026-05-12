@@ -10,8 +10,11 @@ namespace domain {
 
 namespace {
 
-constexpr float kHitR = kBulletBodyRadius + kActorBodyRadius;
-constexpr float kHitRSq = kHitR * kHitR;
+constexpr float kHitREnemyForPlayerBullet = kBulletBodyRadius + kEnemyPlayerBulletHitRadius;
+constexpr float kHitREnemyForPlayerBulletSq = kHitREnemyForPlayerBullet * kHitREnemyForPlayerBullet;
+
+constexpr float kHitRPlayerForEnemyBullet = kBulletBodyRadius + kPlayerBodyRadius;
+constexpr float kHitRPlayerForEnemyBulletSq = kHitRPlayerForEnemyBullet * kHitRPlayerForEnemyBullet;
 
 } // namespace
 
@@ -32,7 +35,7 @@ bool PlayerBulletHitPolicy::resolveActorHits(BulletActor& bullet, World& world) 
         }
         const float dx = e->x() - bullet.x();
         const float dy = e->y() - bullet.y();
-        if (lengthSq(dx, dy) < kHitRSq) {
+        if (lengthSq(dx, dy) < kHitREnemyForPlayerBulletSq) {
             e->applyDamage(std::max(1, bullet.damage()), &world);
             return true;
         }
@@ -43,7 +46,7 @@ bool PlayerBulletHitPolicy::resolveActorHits(BulletActor& bullet, World& world) 
 bool EnemyBulletHitPolicy::resolveActorHits(BulletActor& bullet, World& world) {
     const float dx = world.player().x() - bullet.x();
     const float dy = world.player().y() - bullet.y();
-    if (lengthSq(dx, dy) < kHitRSq) {
+    if (lengthSq(dx, dy) < kHitRPlayerForEnemyBulletSq) {
         world.onEnemyBulletHitPlayer(std::max(1, bullet.damage()));
         return true;
     }

@@ -82,7 +82,7 @@ public:
     }
 };
 
-class EliteHybridBehavior final : public IEnemyBehavior {
+class EliteHybridBehavior : public IEnemyBehavior {
 public:
     void tick(EnemyActor& self, CombatActorPorts ports, World& world, double dt) override {
         self.advanceEnemyFireCooldown(dt);
@@ -123,6 +123,9 @@ public:
     }
 };
 
+/** Boss uses the same hybrid pattern; tuning is in `EnemyActor::configureForArchetype` (Boss). */
+class BossHybridBehavior final : public EliteHybridBehavior {};
+
 std::unique_ptr<IEnemyBehavior> makeEnemyBehavior(EnemyArchetype a) {
     switch (a) {
     case EnemyArchetype::Melee:
@@ -132,8 +135,7 @@ std::unique_ptr<IEnemyBehavior> makeEnemyBehavior(EnemyArchetype a) {
     case EnemyArchetype::EliteHybrid:
         return std::make_unique<EliteHybridBehavior>();
     case EnemyArchetype::Boss:
-        // TODO: replace with dedicated boss AI / phases.
-        return std::make_unique<EliteHybridBehavior>();
+        return std::make_unique<BossHybridBehavior>();
     default:
         return std::make_unique<MeleeChaseBehavior>();
     }

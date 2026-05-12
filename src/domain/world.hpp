@@ -65,6 +65,7 @@ public:
 private:
     void scatterObstacles();
     void spawnEnemies();
+    void maybeSpawnBossAfterWaveClear();
     void cullDynamics();
     void evaluateBattleOutcome();
     void applyContactDamage(double dt);
@@ -85,6 +86,8 @@ private:
     double contact_hurt_cool_{0.0};
     ScoreState score_;
     std::vector<CombatVfxEvent> vfx_pending_;
+    /** After first wave cleared, a single boss is spawned; then empty field means victory. */
+    bool boss_released_{false};
 };
 
 } // namespace domain

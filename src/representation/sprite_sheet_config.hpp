@@ -36,4 +36,20 @@ struct SpriteSheetConfig {
     static SpriteSheetConfig load_from_file(const std::string& path);
 };
 
+/** Per-species atlas like `player_sheet.json`: one `texture`, grid, `clips.idle` / `move` / optional `melee_attack`. */
+struct EnemySheetConfig {
+    std::string texture_path;
+    int columns{1};
+    int rows{1};
+    float scale_vs_disc{2.2f};
+    SpriteLinearClip idle;
+    SpriteLinearClip move;
+    SpriteLinearClip melee;
+    bool has_melee{false};
+    bool valid{false};
+    std::string load_error;
+
+    static EnemySheetConfig load_from_file(const std::string& path);
+};
+
 } // namespace representation

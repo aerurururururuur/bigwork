@@ -13,6 +13,8 @@ struct RawInputSnapshot {
     int mouse_px{0};
     int mouse_py{0};
     bool fire{false};
+    /** Edge: Q skill (one frame). */
+    bool skill_q{false};
     bool confirm{false};
     bool pointer_confirm{false};
     bool cancel{false};

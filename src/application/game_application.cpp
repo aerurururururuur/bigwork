@@ -4,6 +4,7 @@
 #include "domain/bullet_faction.hpp"
 #include "domain/combat_events.hpp"
 #include "domain/combat_entities.hpp"
+#include "domain/enemy_archetype.hpp"
 #include "domain/enemy_engagement_constants.hpp"
 #include "domain/screen_layout.hpp"
 
@@ -29,6 +30,7 @@ void GameApplication::tick(double dt, const std::vector<GameCommand>& commands,
     int acc_dx = 0;
     int acc_dy = 0;
     bool fire = false;
+    bool skill_q = false;
 
     for (GameCommand cmd : commands) {
         switch (cmd) {
@@ -67,6 +69,9 @@ void GameApplication::tick(double dt, const std::vector<GameCommand>& commands,
         case GameCommand::Fire:
             fire = true;
             break;
+        case GameCommand::SkillQ:
+            skill_q = true;
+            break;
         }
     }
 
@@ -74,6 +79,7 @@ void GameApplication::tick(double dt, const std::vector<GameCommand>& commands,
     in.move_dx = (acc_dx < 0) ? -1 : (acc_dx > 0 ? 1 : 0);
     in.move_dy = (acc_dy < 0) ? -1 : (acc_dy > 0 ? 1 : 0);
     in.fire = fire;
+    in.skill_q = skill_q;
 
     if (state_ == GameState::Battle) {
         const float pcx = world_->player().x() * static_cast<float>(cell_px_);
@@ -124,14 +130,23 @@ RenderSnapshot GameApplication::buildSnapshot() {
     s.player_vx = world_->player().vx();
     s.player_vy = world_->player().vy();
     s.actor_radius_world = domain::kActorBodyRadius;
+    s.player_body_radius_world = domain::kPlayerBodyRadius;
     s.elite_melee_manhattan_tiles = domain::kEliteHybridMeleeManhattanWorld;
     s.player_hp = world_->player().hp();
     s.player_hp_max = world_->player().maxHp();
+    s.player_mp = world_->player().mp();
+    s.player_mp_max = world_->player().maxMp();
+    s.player_skill_anim_remaining = static_cast<float>(world_->player().skillAnimRemaining());
+    s.player_skill_anim_total = static_cast<float>(world_->player().skillAnimTotal());
 
     s.enemies.clear();
+    s.battle_has_boss_enemy = false;
     for (const auto& e : world_->enemies()) {
         if (!e || e->hp() <= 0) {
             continue;
+        }
+        if (e->archetype() == domain::EnemyArchetype::Boss) {
+            s.battle_has_boss_enemy = true;
         }
         EnemyView v;
         v.world_x = e->x();

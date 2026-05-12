@@ -5,7 +5,9 @@ description: >-
   IRandom/Seed, FrameTimer FPS+deltaTime, non-blocking input. Domain: TileBase,
   CombatEntity, World, IEnemyBehavior + combat ports. Application: RenderSnapshot
   only to Rep. Representation: FrameComposer (tiles), data-driven JSON sprites
-  (SpriteSheetConfig / PlayerSpriteAnimator), SFML present order. Continuous
+  (SpriteSheetConfig / PlayerSpriteAnimator; enemy atlas same pattern:
+  per-species sheet JSON + setTextureRect per frame), SFML present order.
+  Win32: SFML Audio needs OpenAL32.dll next to exe (CMake POST_BUILD). Continuous
   actor coords + grid walkable. Legacy console ITerminal optional.
 ---
 
@@ -30,9 +32,10 @@ description: >-
 |------|------|------|
 | **`SpriteSheetConfig`** | `representation/sprite_sheet_config.*` | 从 **`assets/sprites/player_sheet.json`** 解析图集：`texture`、`columns`、`rows`、`scale_cells`、`clips`（idle/run/death 段列表）。失败则 `valid == false`，调用方回退占位图。 |
 | **`PlayerSpriteAnimator`** | `representation/player_sprite_animator.*` | **只读 `RenderSnapshot`**：idle/run/death 状态机、`texture_rect`、`apply_to_sprite`（脚底原点、与敌圆直径下限 `2*pr` 取 max、可选全局倍率、水平翻转由 `player_vx`）。**不写死行列**：换角改 JSON。 |
-| **`SfmlGameWindow`** | `representation/sfml_game_window.*` | 构造期加载配置与纹理；`drawPlayer` 内 `update(dt,snap)` 再绘制；失败回退 `CircleShape`。 |
+| **`EnemyVisualResources` + 敌人图集** | `representation/enemy_visual_resources.*`、`assets/sprites/enemy_visuals.json` | 敌人贴图**与主角同构**：**一张合成 PNG + 网格切帧**，禁止把整张 atlas 当一帧缩放显示。索引表 + 每物种 `*_sheet.json`（`texture`、`columns`、`rows`、`clips.idle` / `move`、可选 `melee_attack`；字段语义对齐 `player_sheet` 的扁平 clip：`row`、`start_col`、`frame_count`、`fps`）。绘制用 `sf::Sprite::setTextureRect`，缩放以**当前帧**宽高为基准；动画时间可在 `SfmlGameWindow` 内按物种累加 `dt`（或后续用快照字段做相位偏移）。失败回退色块圆点。 |
+| **`SfmlGameWindow`** | `representation/sfml_game_window.*` | 构造期加载配置与纹理；`drawPlayer` 内 `update(dt,snap)` 再绘制；`drawEnemies` 按 `EnemyView`（`sprite_id`、`anim_vx/y`、近战阈值）选 clip 并切帧；失败回退 `CircleShape`。 |
 
-**可复用要点**：同一套 **`SpriteSheetConfig::load_from_file` + `SpriteLinearClip`** 可拷贝思路做 **`enemy_sheet.json` / `enemy_visuals.json`**（敌人多为单图 idle/walk 路径表，不必与玩家同 schema）。解析器可用 **轻量 regex 子集**（见 `sprite_sheet_config.cpp`），避免为 MVP 引入重型 JSON 依赖。
+**可复用要点**：敌人与主角共用 **`SpriteLinearClip` / `SpriteFrameCell` + 网格 `texture_rect`** 思路；解析可 **抽取/复用** `sprite_sheet_config.cpp` 中的 `append_row_strip`、`parse_int_field` 等，或单独 `enemy_sheet_config.*` 调用同一套子解析，避免复制 regex。顶层 **`enemy_visuals.json`** 保留 **`enemy_bullet_pebblin_rock`** 等非条带资源路径即可。避免为 MVP 引入重型 JSON 库。
 
 ### 连续坐标 vs 网格权威
 
@@ -62,7 +65,7 @@ description: >-
 | **KeyboardRawListen** | **非阻塞** 原始输入（SFML 路径下在 `SfmlGameWindow::pollInput` 聚合 `RawInputSnapshot`）。禁止阻塞 `getch()` 主循环。 |
 | **RandomUtil** | `StdRandom` 等实现；领域只依赖端口 **`IRandom`**。 |
 | **FileAuditSink** | 审计落盘（缓冲策略在实现内，避免卡帧）。 |
-| **BgmCtrl** | 可选 BGM / 音效；经端口或 Infra 直调，**不**阻塞 `tick`。 |
+| **BgmCtrl** | 可选 BGM / 音效；经端口或 Infra 直调，**不**阻塞 `tick`。链接 **SFML Audio** 时进程会加载 **OpenAL32.dll**：Windows 下须在 **exe 同目录** 部署（例如 CMake POST_BUILD 从 SFML 源码树 `extlibs/bin/x64|x86/openal32.dll` 复制），否则启动即系统弹窗缺 DLL。 |
 
 ### RandomUtil、`IRandom` 与 `Seed`
 
@@ -97,6 +100,7 @@ description: >-
 | **DialogUIPop** | `SfmlGameWindow` 最后绘制 `OverlayModel`（标题 / 结束面板）。 |
 | **SpriteSheetLoad** | `SpriteSheetConfig` + JSON；失败回退几何占位。 |
 | **ActorSpriteAnim** | `PlayerSpriteAnimator`：快照驱动动画与朝向。 |
+| **EnemySpriteSheet** | 敌人图集 JSON + `EnemyVisualResources`：与玩家相同的 **atlas + clip** 模型；`drawEnemies` 使用 **`setTextureRect`**，近战姿态用快照中 **与 Domain 一致的曼哈顿阈值**（经 `elite_melee_manhattan_tiles` 等字段），避免 Rep 与 `enemy_behavior` 魔法数分叉。 |
 
 ### 逻辑格与屏幕像素
 
@@ -117,7 +121,7 @@ GameApplication, RenderSnapshot, OverlayModel, GameCommand, GameState
   → application/
 
 FrameComposer, KeyMapping, ThemePalette, SfmlGameWindow, SpriteSheetConfig,
-  PlayerSpriteAnimator, movement_particles, combat_vfx_particles
+  PlayerSpriteAnimator, enemy_visual_resources, movement_particles, combat_vfx_particles
   → representation/
 ```
 
@@ -158,7 +162,7 @@ Infrastructure → Domain
 
 - `src/domain/` — `tile_base.*`、`combat_entities.*`、`playfield.*`、`world.*`、`enemy_behavior.*`、`bullet_hit_policy.*`、`score_state.*`、端口、`seed.hpp`
 - `src/application/` — `game_application.*`、`render_snapshot.hpp`、`overlay_layout.*`、`game_command.hpp`、`game_state.hpp`
-- `src/representation/` — `frame_composer.*`、`sfml_game_window.*`、`key_mapping.*`、`theme_palette.*`、`sprite_sheet_config.*`、`player_sprite_animator.*`、`movement_particles.*`、`combat_vfx_particles.*`
+- `src/representation/` — `frame_composer.*`、`sfml_game_window.*`、`key_mapping.*`、`theme_palette.*`、`sprite_sheet_config.*`、`player_sprite_animator.*`、`enemy_visual_resources.*`、`movement_particles.*`、`combat_vfx_particles.*`
 - `src/infrastructure/` — `frame_timer.*`、`file_audit_sink.*`、`std_random.*` 等
 - `src/main.cpp` — 注入 `StdRandom` → `World`
 
@@ -181,6 +185,7 @@ Infrastructure → Domain
 - [ ] 主题是否只改 **`color_id` 映射**？
 - [ ] 输入是否**非阻塞**、主循环是否有 **FrameTimer**？
 - [ ] 新精灵是否 **JSON 可换路径**；Rep 是否在加载失败时 **回退占位**而不崩？
+- [ ] 敌人若为多帧图集，是否使用 **与主角相同的切帧模型**（单 texture + grid + clips），而非整张贴图？
 - [ ] Domain 与 Rep **是否重复同一魔法数**（如近战距离阈值）；若必须重复是否在注释中写明「须与 `enemy_behavior` 同步」或抽到 **Domain 头文件常量** 由 Application 写入快照？
 
 ## 注意事项（反模式与边界）
@@ -189,8 +194,9 @@ Infrastructure → Domain
 2. **`EnemyArchetype` 扩展（如预留 `Boss`）**：必须同步 `makeEnemyBehavior`、`configureForArchetype`、分数等所有 `switch`，避免未处理枚举；未实装前可用占位行为并标 `TODO`。  
 3. **子弹派系**：用 `BulletFaction` / `BulletFactionView` 区分绘制与命中策略，敌弹特殊贴图用 **快照枚举或 `uint8_t` 子类型**，避免在 Rep 里 `dynamic_cast` 跨 DLL/静态库边界（优先虚函数 `enemyBulletSprite()` 一类接口）。  
 4. **Letterbox / 鼠标瞄准**：逻辑坐标用 `mapPixelToCoords`；瞄准向量在 **Application** 写入 `PlayerIntent`，与精灵朝向解耦（朝向可读 `player_vx` 或后续快照字段）。  
-5. **CMake**：新增 `representation` 下 `.cpp` 须加入根 **`CMakeLists.txt`** 的 `roadside_representation` 源列表。
+5. **CMake**：新增 `representation` 下 `.cpp` 须加入根 **`CMakeLists.txt`** 的 `roadside_representation` 源列表；若使用 **SFML Audio**，Windows **POST_BUILD** 须包含 **OpenAL32.dll** 与 `sfml-audio-2.dll` 等到 exe 目录（见上表 BgmCtrl）。  
+6. **敌人精灵**：美术交付 **一张合成表** 时，必须同时给出 **`columns`/`rows` 与各 clip 的 `row`/`start_col`/`frame_count`/`fps`**；与主角一样错一格会花屏；**禁止**在 Rep 里把整张 atlas 当单帧贴图。
 
 ## 原始计划（本地）
 
-早期公路企划：`C:/Users/12073/.cursor/plans/沿途公路信步架构_14bf9d47.plan.md`。战斗改造计划：`C:/Users/12073/.cursor/plans/元气骑士风战斗改造_f7b79992.plan.md`。与 skill 冲突时以**仓库已落地代码**为准。
+早期公路企划：`C:/Users/12073/.cursor/plans/沿途公路信步架构_14bf9d47.plan.md`。战斗改造计划：`C:/Users/12073/.cursor/plans/元气骑士风战斗改造_f7b79992.plan.md`。敌人精灵与岩石弹、图集切帧：`C:/Users/12073/.cursor/plans/敌人精灵与岩石弹_1ef780fe.plan.md`、`C:/Users/12073/.cursor/plans/敌人精灵表切帧_b472a821.plan.md`。与 skill 冲突时以**仓库已落地代码**为准。

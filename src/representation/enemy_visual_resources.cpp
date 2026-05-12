@@ -18,15 +18,6 @@ std::optional<std::string> json_string_field(const std::string& obj, const char*
     return std::nullopt;
 }
 
-std::optional<float> json_float_field(const std::string& obj, const char* name) {
-    const std::string pat = std::string("\"") + name + "\"\\s*:\\s*([0-9.+-eE]+)";
-    std::smatch m;
-    if (std::regex_search(obj, m, std::regex(pat))) {
-        return static_cast<float>(std::stod(m[1].str()));
-    }
-    return std::nullopt;
-}
-
 std::optional<int> json_int_field(const std::string& obj, const char* name) {
     const std::string pat = std::string("\"") + name + "\"\\s*:\\s*(-?[0-9]+)";
     std::smatch m;
@@ -132,18 +123,31 @@ bool EnemyVisualResources::load_from_file(const std::string& path) {
             continue;
         }
         Entry& e = entries_[static_cast<std::size_t>(*id)];
-        if (const auto sc = json_float_field(obj, "scale_vs_disc")) {
-            e.scale_vs_disc = *sc;
+        const auto sheet_path = json_string_field(obj, "sheet");
+        if (!sheet_path) {
+            load_error_ += "entry " + std::to_string(*id) + " missing sheet; ";
+            continue;
         }
-        if (const auto p = json_string_field(obj, "idle")) {
-            e.idle_ok = e.idle.loadFromFile(*p);
+        e.cfg = EnemySheetConfig::load_from_file(*sheet_path);
+        if (!e.cfg.valid) {
+            load_error_ += "sheet id " + std::to_string(*id) + ": " + e.cfg.load_error + "; ";
+            continue;
         }
-        if (const auto p = json_string_field(obj, "move")) {
-            e.move_ok = e.move.loadFromFile(*p);
+        if (!e.texture.loadFromFile(e.cfg.texture_path)) {
+            load_error_ += "texture load failed: " + e.cfg.texture_path + "; ";
+            continue;
         }
-        if (const auto p = json_string_field(obj, "melee_attack")) {
-            e.melee_ok = e.melee.loadFromFile(*p);
+        const auto sz = e.texture.getSize();
+        if (e.cfg.columns <= 0 || e.cfg.rows <= 0) {
+            load_error_ += "bad columns/rows id " + std::to_string(*id) + "; ";
+            continue;
         }
+        if (sz.x % static_cast<unsigned>(e.cfg.columns) != 0u ||
+            sz.y % static_cast<unsigned>(e.cfg.rows) != 0u) {
+            load_error_ += "texture size not divisible by grid id " + std::to_string(*id) + "; ";
+            continue;
+        }
+        e.sheet_ok = true;
     }
 
     return true;
@@ -153,39 +157,23 @@ bool EnemyVisualResources::sprite_ready(int sprite_id) const noexcept {
     if (sprite_id < 0 || sprite_id >= static_cast<int>(entries_.size())) {
         return false;
     }
-    const Entry& e = entries_[static_cast<std::size_t>(sprite_id)];
-    return e.idle_ok && e.move_ok;
+    return entries_[static_cast<std::size_t>(sprite_id)].sheet_ok;
 }
 
-const sf::Texture* EnemyVisualResources::enemy_idle_tex(int sprite_id) const noexcept {
+const EnemySheetConfig* EnemyVisualResources::sheet_config(int sprite_id) const noexcept {
     if (sprite_id < 0 || sprite_id >= static_cast<int>(entries_.size())) {
         return nullptr;
     }
     const Entry& e = entries_[static_cast<std::size_t>(sprite_id)];
-    return e.idle_ok ? &e.idle : nullptr;
+    return e.sheet_ok ? &e.cfg : nullptr;
 }
 
-const sf::Texture* EnemyVisualResources::enemy_move_tex(int sprite_id) const noexcept {
+const sf::Texture* EnemyVisualResources::sheet_texture(int sprite_id) const noexcept {
     if (sprite_id < 0 || sprite_id >= static_cast<int>(entries_.size())) {
         return nullptr;
     }
     const Entry& e = entries_[static_cast<std::size_t>(sprite_id)];
-    return e.move_ok ? &e.move : nullptr;
-}
-
-const sf::Texture* EnemyVisualResources::enemy_melee_tex(int sprite_id) const noexcept {
-    if (sprite_id < 0 || sprite_id >= static_cast<int>(entries_.size())) {
-        return nullptr;
-    }
-    const Entry& e = entries_[static_cast<std::size_t>(sprite_id)];
-    return e.melee_ok ? &e.melee : nullptr;
-}
-
-float EnemyVisualResources::enemy_scale_vs_disc(int sprite_id) const noexcept {
-    if (sprite_id < 0 || sprite_id >= static_cast<int>(entries_.size())) {
-        return 2.2f;
-    }
-    return entries_[static_cast<std::size_t>(sprite_id)].scale_vs_disc;
+    return e.sheet_ok ? &e.texture : nullptr;
 }
 
 const sf::Texture* EnemyVisualResources::pebblin_rock_tex() const noexcept {

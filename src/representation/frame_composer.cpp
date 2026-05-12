@@ -28,7 +28,6 @@ std::vector<domain::FrameCell> FrameComposer::compose(const application::RenderS
     for (int r = 0; r < R; ++r) {
         for (int c = 0; c < C; ++c) {
             domain::FrameCell cell{};
-            cell.ch = ' ';
             const int py = r - snap.sky_rows;
             char tch = '.';
             if (py >= 0 && py < snap.playfield_rows && c >= 0 && c < C) {
@@ -37,6 +36,7 @@ std::vector<domain::FrameCell> FrameComposer::compose(const application::RenderS
                     tch = snap.playfield_tiles[idx];
                 }
             }
+            cell.ch = tch;
             cell.color_id = tileColor(snap.theme, tch);
 
             out[static_cast<std::size_t>(r * C + c)] = cell;

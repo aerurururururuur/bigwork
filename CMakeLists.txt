@@ -46,6 +46,7 @@ add_library(roadside_domain STATIC
     src/domain/bullet_hit_policy.cpp
     src/domain/enemy_behavior.cpp
     src/domain/score_state.cpp
+    src/domain/skill.cpp
     src/domain/combat_entities.cpp
     src/domain/world.cpp
 )
@@ -115,4 +116,31 @@ if(WIN32 AND TARGET sfml-graphics)
             )
         endif()
     endforeach()
+    # SFML Audio loads OpenAL at DLL load time; SFML does not copy this next to our exe by default.
+    if(CMAKE_SIZEOF_VOID_P EQUAL 8)
+        set(_roads_oal_bits "x64")
+    else()
+        set(_roads_oal_bits "x86")
+    endif()
+    set(_roads_oal_src "")
+    foreach(_root IN ITEMS "${sfml_SOURCE_DIR}" "${SFML_SOURCE_DIR}" "${CMAKE_BINARY_DIR}/_deps/sfml-src")
+        if(_root AND EXISTS "${_root}/extlibs/bin/${_roads_oal_bits}/openal32.dll")
+            set(_roads_oal_src "${_root}/extlibs/bin/${_roads_oal_bits}/openal32.dll")
+            break()
+        endif()
+    endforeach()
+    if(_roads_oal_src)
+        add_custom_command(
+            TARGET roadside_stroll
+            POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "${_roads_oal_src}"
+                    $<TARGET_FILE_DIR:roadside_stroll>
+            COMMENT "Copy openal32.dll (OpenAL for SFML Audio)"
+        )
+    else()
+        message(WARNING
+            "openal32.dll not found under SFML extlibs. Copy SFML extlibs/bin/${_roads_oal_bits}/openal32.dll next to roadside_stroll.exe, or install OpenAL Soft."
+        )
+    endif()
 endif()
