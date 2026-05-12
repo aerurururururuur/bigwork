@@ -41,13 +41,16 @@ elseif(TARGET sfml-main)
 endif()
 
 add_library(roadside_domain STATIC
+    src/domain/tile_base.cpp
     src/domain/playfield.cpp
+    src/domain/combat_entities.cpp
     src/domain/world.cpp
 )
 target_include_directories(roadside_domain PUBLIC ${CMAKE_SOURCE_DIR}/src)
 
 add_library(roadside_application STATIC
     src/application/game_application.cpp
+    src/application/overlay_layout.cpp
 )
 target_include_directories(roadside_application PUBLIC ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(roadside_application PUBLIC roadside_domain)
@@ -72,6 +75,7 @@ add_library(roadside_representation STATIC
     src/representation/frame_composer.cpp
     src/representation/theme_palette.cpp
     src/representation/sfml_game_window.cpp
+    src/representation/movement_particles.cpp
 )
 target_include_directories(roadside_representation PUBLIC ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(roadside_representation PUBLIC roadside_application roadside_infrastructure ${ROADSIDE_SFML_LIBS})

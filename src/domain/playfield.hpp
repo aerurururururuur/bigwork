@@ -1,12 +1,13 @@
 #pragma once
 
 #include "domain/screen_layout.hpp"
+#include "domain/tile_base.hpp"
 
 #include <vector>
 
 namespace domain {
 
-/** Walkable + symbol per cell for the bottom strip (width = kCols, height = playfieldRows). */
+/** Room grid: stores TileKind per cell; semantics from TileBase subclasses. */
 class PlayfieldGrid {
 public:
     PlayfieldGrid();
@@ -17,10 +18,12 @@ public:
     bool inBounds(int x, int y) const;
     bool walkable(int x, int y) const;
     char tile(int x, int y) const;
+    TileKind tileKind(int x, int y) const;
+
+    void setKind(int x, int y, TileKind k);
 
 private:
-    std::vector<char> tiles_;
-    std::vector<bool> walkable_;
+    std::vector<TileKind> kinds_;
 };
 
 } // namespace domain

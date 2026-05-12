@@ -7,6 +7,7 @@
 #include "infrastructure/std_random.hpp"
 #include "representation/frame_composer.hpp"
 #include "representation/key_mapping.hpp"
+#include "representation/render_constants.hpp"
 #include "representation/sfml_game_window.hpp"
 
 #include <filesystem>
@@ -20,26 +21,28 @@ int main() {
     infrastructure::FrameTimer timer(60.0);
     domain::Seed seed{42};
     infrastructure::StdRandom rng(seed);
-    (void)rng;
 
-    domain::World world;
-    application::GameApplication app(world, audit);
+    domain::World world(rng);
+    application::GameApplication app(world, audit, representation::kScreenPixelsPerLogicalCell);
     representation::FrameComposer composer;
-    representation::SfmlGameWindow window(domain::ScreenLayout::kCols, domain::ScreenLayout::kRows, 18);
+    representation::SfmlGameWindow window(domain::ScreenLayout::kCols, domain::ScreenLayout::kRows,
+                                          representation::kScreenPixelsPerLogicalCell);
 
-    audit.write("BOOT", "roadside_stroll window MVP starting.");
+    audit.write("BOOT", "pixel arena combat window starting.");
+
+    application::RenderSnapshot snap = app.buildSnapshot();
 
     while (window.isOpen() && !app.wantsQuit()) {
         const double dt = timer.waitNextFrame();
         domain::RawInputSnapshot raw{};
-        if (!window.pollInput(raw)) {
+        if (!window.pollInput(raw, snap)) {
             break;
         }
         const std::vector<application::GameCommand> cmds = representation::mapRawInput(raw);
-        app.tick(dt, cmds);
-        const application::RenderSnapshot snap = app.buildSnapshot();
+        app.tick(dt, cmds, raw);
+        snap = app.buildSnapshot();
         const std::vector<domain::FrameCell> frame = composer.compose(snap);
-        window.present(snap.total_rows, snap.total_cols, frame);
+        window.present(snap.total_rows, snap.total_cols, frame, snap, dt);
     }
 
     audit.write("SHUTDOWN", "normal exit.");

@@ -10,6 +10,7 @@ enum class GameCommand {
     MoveDown,
     MoveLeft,
     MoveRight,
+    Fire,
     Confirm,
     ToggleTheme,
     Quit,

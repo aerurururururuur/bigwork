@@ -2,6 +2,6 @@
 
 namespace application {
 
-enum class GameState { Title, Roaming };
+enum class GameState { Title, Battle, Victory, Defeat };
 
 } // namespace application
