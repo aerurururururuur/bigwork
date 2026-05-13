@@ -21,6 +21,7 @@ constexpr int kScatterTriesPerObstacle = 50;
 constexpr int kEnemySpawnMaxTries = 600;
 
 constexpr double kPlayerBulletInvulnSec = 0.35;
+constexpr float kBossSpawnAboveCenterTiles = 2.f;
 
 struct EnemySpawnRow {
     EnemySpriteId sprite;
@@ -190,40 +191,37 @@ void World::maybeSpawnBossAfterWaveClear() {
         }
     }
 
-    auto try_spawn = [this](float min_manhattan) -> bool {
-        for (int tries = 0; tries < kEnemySpawnMaxTries; ++tries) {
-            const int x = rng_.uniformInt(1, playfield_.width() - 2);
-            const int y = rng_.uniformInt(1, playfield_.height() - 2);
-            if (!playfield_.walkable(x, y)) {
-                continue;
-            }
-            const float ex = static_cast<float>(x) + kPlayerSpawnInset;
-            const float ey = static_cast<float>(y) + kPlayerSpawnInset;
-            const float md = std::abs(ex - player_.x_) + std::abs(ey - player_.y_);
-            if (md < min_manhattan) {
-                continue;
-            }
-            if (!enemyFitsAt(ex, ey, nullptr)) {
-                continue;
-            }
-            auto boss = std::make_unique<EnemyActor>();
-            boss->x_ = ex;
-            boss->y_ = ey;
-            boss->resetForSpawn(EnemyArchetype::Boss, EnemySpriteId::Pebblin);
-            enemies_.push_back(std::move(boss));
-            return true;
+    playfield_.clearObstaclesToFloor();
+
+    const auto place_boss_at = [this](float ex, float ey) -> bool {
+        if (!enemyFitsAt(ex, ey, nullptr)) {
+            return false;
         }
-        return false;
+        auto boss = std::make_unique<EnemyActor>();
+        boss->x_ = ex;
+        boss->y_ = ey;
+        boss->resetForSpawn(EnemyArchetype::Boss, EnemySpriteId::Pebblin);
+        enemies_.push_back(std::move(boss));
+        return true;
     };
 
-    if (try_spawn(kSpawnEnemyManhattanMin)) {
-        boss_released_ = true;
-        return;
+    const float wf = static_cast<float>(playfield_.width());
+    const float hf = static_cast<float>(playfield_.height());
+    const float cx0 = wf * 0.5f;
+    const float cy0 = hf * 0.5f - kBossSpawnAboveCenterTiles;
+
+    static constexpr float kOff[][2] = {
+        {0.f, 0.f},   {1.f, 0.f},   {-1.f, 0.f},  {0.f, 1.f},   {0.f, -1.f}, {1.f, -1.f}, {-1.f, -1.f},
+        {1.f, 1.f},   {-1.f, 1.f},  {2.f, 0.f},   {-2.f, 0.f},  {0.f, 2.f},  {0.f, -2.f}, {2.f, -1.f},
+        {-2.f, -1.f}, {2.f, 1.f},   {-2.f, 1.f},  {3.f, 0.f},   {-3.f, 0.f},
+    };
+    for (const auto& d : kOff) {
+        if (place_boss_at(cx0 + d[0], cy0 + d[1])) {
+            boss_released_ = true;
+            return;
+        }
     }
-    if (try_spawn(4.f)) {
-        boss_released_ = true;
-        return;
-    }
+
     for (int y = 1; y < playfield_.height() - 1; ++y) {
         for (int x = 1; x < playfield_.width() - 1; ++x) {
             if (!playfield_.walkable(x, y)) {
@@ -231,16 +229,10 @@ void World::maybeSpawnBossAfterWaveClear() {
             }
             const float ex = static_cast<float>(x) + kPlayerSpawnInset;
             const float ey = static_cast<float>(y) + kPlayerSpawnInset;
-            if (!enemyFitsAt(ex, ey, nullptr)) {
-                continue;
+            if (place_boss_at(ex, ey)) {
+                boss_released_ = true;
+                return;
             }
-            auto boss = std::make_unique<EnemyActor>();
-            boss->x_ = ex;
-            boss->y_ = ey;
-            boss->resetForSpawn(EnemyArchetype::Boss, EnemySpriteId::Pebblin);
-            enemies_.push_back(std::move(boss));
-            boss_released_ = true;
-            return;
         }
     }
 }
@@ -277,6 +269,12 @@ void World::spawnPlayerBullet(float x, float y, float vx, float vy, int damage) 
 
 void World::spawnEnemyBullet(float x, float y, float vx, float vy, int damage, EnemyBulletSprite sprite) {
     bullets_.push_back(std::make_unique<EnemyBulletActor>(x, y, vx, vy, damage, sprite));
+}
+
+void World::spawnEnemyBulletSoftHoming(float x, float y, float vx, float vy, int damage, EnemyBulletSprite sprite,
+                                       double straight_sec, float max_turn_rad_per_sec) {
+    bullets_.push_back(std::make_unique<EnemyBulletActor>(x, y, vx, vy, damage, sprite, straight_sec,
+                                                           max_turn_rad_per_sec));
 }
 
 void World::chasePlayerStep(EnemyActor& self, World& world, double dt, float chase_speed) {

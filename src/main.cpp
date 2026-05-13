@@ -23,6 +23,9 @@ int main() {
 
     infrastructure::FileAuditSink audit("logs/game_audit.log");
     const infrastructure::GameConfig game_cfg = infrastructure::loadGameConfigAuto();
+    audit.write("BOOT", std::string("game_config run_mode=") +
+                            (game_cfg.run_mode == infrastructure::RunMode::Development ? "development"
+                                                                                         : "production"));
     if (game_cfg.background_image.has_value()) {
         audit.write("BOOT", std::string("game_config background_image=") +
                                 game_cfg.background_image->string());
@@ -39,11 +42,13 @@ int main() {
     infrastructure::StdRandom rng(seed);
 
     domain::World world(rng);
-    application::GameApplication app(world, audit, representation::kScreenPixelsPerLogicalCell);
+    application::GameApplication app(world, audit, representation::kScreenPixelsPerLogicalCell,
+                                       game_cfg.run_mode);
     representation::FrameComposer composer;
+    const bool dev_boss_digit_keys = (game_cfg.run_mode == infrastructure::RunMode::Development);
     representation::SfmlGameWindow window(domain::ScreenLayout::kCols, domain::ScreenLayout::kRows,
                                           representation::kScreenPixelsPerLogicalCell,
-                                          game_cfg.background_image);
+                                          game_cfg.background_image, dev_boss_digit_keys);
 
     representation::BgMusicController bgm;
     if (game_cfg.music_bgm.has_value()) {

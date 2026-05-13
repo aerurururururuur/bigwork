@@ -28,8 +28,16 @@ BulletActor::~BulletActor() = default;
 PlayerBulletActor::PlayerBulletActor(float x, float y, float vx, float vy, int damage)
     : BulletActor(x, y, vx, vy, damage, makeBulletHitPolicy(BulletFaction::Player)) {}
 
-EnemyBulletActor::EnemyBulletActor(float x, float y, float vx, float vy, int damage, EnemyBulletSprite sprite)
-    : BulletActor(x, y, vx, vy, damage, makeBulletHitPolicy(BulletFaction::Enemy)), sprite_(sprite) {}
+EnemyBulletActor::EnemyBulletActor(float x, float y, float vx, float vy, int damage, EnemyBulletSprite sprite,
+                                   double soft_homing_straight_sec, float max_turn_rad_per_sec)
+    : BulletActor(x, y, vx, vy, damage, makeBulletHitPolicy(BulletFaction::Enemy)),
+      sprite_(sprite),
+      soft_homing_(soft_homing_straight_sec >= 0.0),
+      straight_rem_(soft_homing_ ? soft_homing_straight_sec : 0.0),
+      max_turn_rad_per_sec_(soft_homing_ && max_turn_rad_per_sec > 1e-5f ? max_turn_rad_per_sec : 1.2f) {
+    const float sp = length(vx, vy);
+    speed_scalar_ = sp > kEpsilon ? sp : 7.0f;
+}
 
 EnemyActor::~EnemyActor() = default;
 
@@ -124,7 +132,7 @@ void PlayerActor::step(World& world, double dt) {
         if (mp_ >= sk.mpCost()) {
             mp_ -= sk.mpCost();
             skill_slot_cd_[0] += sk.cooldownSeconds();
-            SkillCastContext ctx{world, SkillCasterKind::Player, this, nullptr, x_, y_, damage_};
+            SkillCastContext ctx{world, SkillCasterKind::Player, this, nullptr, x_, y_, damage_, 0};
             sk.execute(ctx);
             constexpr double kSkillAnimFps = 12.0;
             constexpr int kSkillAnimFrames = 3;
@@ -213,13 +221,12 @@ bool BulletActor::destroyed() const noexcept {
     return dead_;
 }
 
-void BulletActor::step(World& world, double dt) {
-    if (dead_) {
-        return;
-    }
-    x_ += vx_ * static_cast<float>(dt);
-    y_ += vy_ * static_cast<float>(dt);
+void BulletActor::integratePosition(World&, float dt_sec) {
+    x_ += vx_ * dt_sec;
+    y_ += vy_ * dt_sec;
+}
 
+void BulletActor::resolveBulletWorldAndHits(World& world) {
     const int gx = static_cast<int>(std::floor(x_));
     const int gy = static_cast<int>(std::floor(y_));
     if (!world.playfield().inBounds(gx, gy)) {
@@ -235,6 +242,51 @@ void BulletActor::step(World& world, double dt) {
     if (hit_policy_->resolveActorHits(*this, world)) {
         dead_ = true;
     }
+}
+
+void BulletActor::step(World& world, double dt) {
+    if (dead_) {
+        return;
+    }
+    const float fdt = static_cast<float>(dt);
+    integratePosition(world, fdt);
+    resolveBulletWorldAndHits(world);
+}
+
+void EnemyBulletActor::integratePosition(World& world, float fdt) {
+    if (!soft_homing_) {
+        BulletActor::integratePosition(world, fdt);
+        return;
+    }
+    if (straight_rem_ > 0.0) {
+        straight_rem_ -= static_cast<double>(fdt);
+        BulletActor::integratePosition(world, fdt);
+        return;
+    }
+
+    const float px = world.player().x();
+    const float py = world.player().y();
+    float tx = px - x_;
+    float ty = py - y_;
+    normalizeOrDefault(tx, ty);
+
+    const float cur = std::atan2(vy_, vx_);
+    const float tgt = std::atan2(ty, tx);
+    float diff = tgt - cur;
+    constexpr float kPi = 3.14159265358979323846f;
+    while (diff > kPi) {
+        diff -= 2.f * kPi;
+    }
+    while (diff < -kPi) {
+        diff += 2.f * kPi;
+    }
+    const float max_step = max_turn_rad_per_sec_ * fdt;
+    const float step = std::clamp(diff, -max_step, max_step);
+    const float newa = cur + step;
+    vx_ = std::cos(newa) * speed_scalar_;
+    vy_ = std::sin(newa) * speed_scalar_;
+
+    BulletActor::integratePosition(world, fdt);
 }
 
 } // namespace domain

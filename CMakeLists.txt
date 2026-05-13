@@ -46,6 +46,7 @@ add_library(roadside_domain STATIC
     src/domain/bullet_hit_policy.cpp
     src/domain/enemy_behavior.cpp
     src/domain/score_state.cpp
+    src/domain/boss_pattern_spawn.cpp
     src/domain/skill.cpp
     src/domain/combat_entities.cpp
     src/domain/world.cpp
@@ -57,7 +58,7 @@ add_library(roadside_application STATIC
     src/application/overlay_layout.cpp
 )
 target_include_directories(roadside_application PUBLIC ${CMAKE_SOURCE_DIR}/src)
-target_link_libraries(roadside_application PUBLIC roadside_domain)
+target_link_libraries(roadside_application PUBLIC roadside_domain roadside_infrastructure)
 
 add_library(roadside_infrastructure STATIC
     src/infrastructure/frame_timer.cpp

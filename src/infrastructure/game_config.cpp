@@ -62,6 +62,16 @@ std::optional<std::filesystem::path> resolveAssetFile(const std::filesystem::pat
     return std::nullopt;
 }
 
+RunMode parseRunMode(std::string val) {
+    for (char& c : val) {
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    }
+    if (val == "development") {
+        return RunMode::Development;
+    }
+    return RunMode::Production;
+}
+
 } // namespace
 
 GameConfig loadGameConfigFromIni(const std::filesystem::path& path) {
@@ -97,6 +107,8 @@ GameConfig loadGameConfigFromIni(const std::filesystem::path& path) {
             } catch (...) {
                 // keep previous (default or last valid)
             }
+        } else if (key == "run_mode" && !val.empty()) {
+            cfg.run_mode = parseRunMode(val);
         }
     }
     return cfg;

@@ -33,6 +33,31 @@ std::uint8_t enemyArchetypeColorId(std::uint8_t archetype) {
 using representation::EnemySheetConfig;
 using representation::SpriteLinearClip;
 
+int keyCodeToDevBossSkillSlot(sf::Keyboard::Key code) {
+    switch (code) {
+    case sf::Keyboard::Num1:
+        return 1;
+    case sf::Keyboard::Num2:
+        return 2;
+    case sf::Keyboard::Num3:
+        return 3;
+    case sf::Keyboard::Num4:
+        return 4;
+    case sf::Keyboard::Num5:
+        return 5;
+    case sf::Keyboard::Num6:
+        return 6;
+    case sf::Keyboard::Num7:
+        return 7;
+    case sf::Keyboard::Num8:
+        return 8;
+    case sf::Keyboard::Num9:
+        return 9;
+    default:
+        return 0;
+    }
+}
+
 int enemy_clip_frame_index(const SpriteLinearClip& c, double t) {
     if (c.frames.empty()) {
         return 0;
@@ -72,8 +97,12 @@ sf::IntRect enemy_sheet_frame_rect(const EnemySheetConfig& cfg, const SpriteLine
 namespace representation {
 
 SfmlGameWindow::SfmlGameWindow(int logical_cols, int logical_rows, int cell_px,
-                               std::optional<std::filesystem::path> background_image_path)
-    : logical_cols_{logical_cols}, logical_rows_{logical_rows}, cell_px_{cell_px} {
+                               std::optional<std::filesystem::path> background_image_path,
+                               bool enable_dev_boss_digit_keys)
+    : logical_cols_{logical_cols},
+      logical_rows_{logical_rows},
+      cell_px_{cell_px},
+      enable_dev_boss_digit_keys_{enable_dev_boss_digit_keys} {
     const unsigned width = static_cast<unsigned>(logical_cols * cell_px);
     const unsigned height = static_cast<unsigned>(logical_rows * cell_px);
 
@@ -216,6 +245,11 @@ bool SfmlGameWindow::pollInput(domain::RawInputSnapshot& out, const application:
                 out.toggle_theme = true;
             } else if (event.key.code == sf::Keyboard::Q && !view.overlay.active) {
                 out.skill_q = true;
+            } else if (enable_dev_boss_digit_keys_ && !view.overlay.active) {
+                const int slot = keyCodeToDevBossSkillSlot(event.key.code);
+                if (slot != 0 && out.dev_boss_skill_slot == 0) {
+                    out.dev_boss_skill_slot = slot;
+                }
             }
         }
         if (event.type == sf::Event::MouseButtonPressed && event.mouseButton.button == sf::Mouse::Left) {
@@ -440,7 +474,7 @@ void SfmlGameWindow::drawBattleHud(const application::RenderSnapshot& snap) {
     window_.draw(hp_bg);
     sf::RectangleShape hp_fill(sf::Vector2f(std::max(1.f, bar_w * hp_ratio), bar_h));
     hp_fill.setPosition(std::floor(left_x), std::floor(top_y));
-    hp_fill.setFillColor(colorFromId(41));
+    hp_fill.setFillColor(sf::Color(215, 58, 68));
     window_.draw(hp_fill);
 
     const float mp_y = top_y + bar_h + gap;

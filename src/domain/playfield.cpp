@@ -48,4 +48,16 @@ void PlayfieldGrid::setKind(int x, int y, TileKind k) {
     kinds_[static_cast<std::size_t>(y * width() + x)] = k;
 }
 
+void PlayfieldGrid::clearObstaclesToFloor() {
+    const int w = width();
+    const int h = height();
+    for (int y = 1; y < h - 1; ++y) {
+        for (int x = 1; x < w - 1; ++x) {
+            if (tileKind(x, y) == TileKind::Obstacle) {
+                setKind(x, y, TileKind::Floor);
+            }
+        }
+    }
+}
+
 } // namespace domain

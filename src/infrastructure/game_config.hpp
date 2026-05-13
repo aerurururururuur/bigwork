@@ -5,6 +5,11 @@
 
 namespace infrastructure {
 
+enum class RunMode {
+    Production,
+    Development,
+};
+
 struct GameConfig {
     /** First non-empty `background_image=` from INI, if any. */
     std::optional<std::filesystem::path> background_image;
@@ -14,6 +19,8 @@ struct GameConfig {
     std::optional<std::filesystem::path> music_bgm_boss;
     /** Parsed `music_volume=` 0-100; default 70 when key absent or invalid. */
     int music_volume{70};
+    /** `run_mode=production` (default) or `development` (Boss digit hotkeys). */
+    RunMode run_mode{RunMode::Production};
 };
 
 /** Parse simple key=value lines; `#` starts a comment; empty lines ignored. */

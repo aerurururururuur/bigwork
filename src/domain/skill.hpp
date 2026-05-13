@@ -17,7 +17,10 @@ struct SkillCastContext {
     /** Player feet position in world space (same as `PlayerActor::x/y`). */
     float player_foot_x{0.f};
     float player_foot_y{0.f};
+    /** Player ring burst damage (`RingBurstSkill`). */
     int bullet_damage{1};
+    /** Boss ring burst damage (`BossRingBurstSkill`). */
+    int enemy_bullet_damage{1};
 };
 
 /** Base skill: slot logic (MP / cooldown) is enforced by the caster; `execute` applies the effect. */
@@ -39,5 +42,38 @@ public:
 
 /** Singleton for the registered ring burst definition. */
 const ISkill& ringBurstSkill();
+
+/** Boss timed skill: ring of enemy bullets (no MP). */
+class BossRingBurstSkill final : public ISkill {
+public:
+    int mpCost() const override;
+    double cooldownSeconds() const override;
+    void execute(SkillCastContext& ctx) const override;
+};
+
+const ISkill& bossRingBurstSkill();
+
+/** Boss ring diffusion: first ring 12 shots; AI fires ring2 after 0.5s. */
+void bossDiffusionFireRing1(SkillCastContext& ctx);
+/** Second ring: 18 shots, global angle offset pi/12 vs first ring. */
+void bossDiffusionFireRing2(SkillCastContext& ctx);
+
+/** Fan aimed at player snapshot: +-30 deg, 20-28 rock bullets, medium speed. */
+void bossFanBarrageFire(SkillCastContext& ctx);
+
+/** One-shot spiral snapshot (tangent bullets, expanding radius). */
+void bossSpiralBurstFire(SkillCastContext& ctx);
+/** Left/right opposing fans perpendicular to aim. */
+void bossDualOpposingFanFire(SkillCastContext& ctx);
+/** Outer ring outward + inner ring inward. */
+void bossCrossDualRingFire(SkillCastContext& ctx);
+/** 8-10 soft-homing rocks: straight then gentle turn toward player. */
+void bossSoftScatterFire(SkillCastContext& ctx);
+
+/**
+ * Number of boss patterns bound to development hotkeys 1..N (max key index 9).
+ * Increase when adding new `boss*` fire functions and manual dispatch.
+ */
+inline constexpr int kBossManualSkillHotkeyCount = 7;
 
 } // namespace domain

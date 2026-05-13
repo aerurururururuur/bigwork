@@ -4,6 +4,7 @@
 #include "domain/enemy_bullet_sprite.hpp"
 #include "domain/enemy_engagement_constants.hpp"
 #include "domain/enemy_sprite_id.hpp"
+#include "domain/skill.hpp"
 #include "domain/vec2.hpp"
 #include "domain/world.hpp"
 
@@ -123,8 +124,76 @@ public:
     }
 };
 
-/** Boss uses the same hybrid pattern; tuning is in `EnemyActor::configureForArchetype` (Boss). */
-class BossHybridBehavior final : public EliteHybridBehavior {};
+/**
+ * Boss: elite hybrid combat, plus Touhou-style ring diffusion (~5s + jitter):
+ * 1s standstill windup, 12 bullets, 0.5s delay, 18 bullets with angle offset (rock sprites).
+ * Alternates with a one-shot fan barrage (aim at player, +-30 deg, 20-28 rocks).
+ */
+class BossHybridBehavior final : public EliteHybridBehavior {
+    enum class DiffusionPhase { None, Windup, WaitRing2 };
+
+    DiffusionPhase diffusion_{DiffusionPhase::None};
+    /** Time remaining in current diffusion phase (windup or ring2 delay). */
+    double diffusion_rem_{0.0};
+    /** Seconds until next boss pattern; `<0` = not yet armed. */
+    double ring_burst_rem_{-1.0};
+    /** After a full ring sequence, next timer triggers fan instead of windup. */
+    bool next_attack_is_fan_{false};
+
+    static void armNextRingBurst(World& world, double& rem_out) {
+        constexpr double kBaseSec = 5.0;
+        constexpr double kMinSec = 2.5;
+        const double jitter_ms = static_cast<double>(world.random().uniformInt(-400, 400)) / 1000.0;
+        rem_out = kBaseSec + jitter_ms;
+        if (rem_out < kMinSec) {
+            rem_out = kMinSec;
+        }
+    }
+
+public:
+    void tick(EnemyActor& self, CombatActorPorts ports, World& world, double dt) override {
+        if (diffusion_ != DiffusionPhase::None) {
+            diffusion_rem_ -= dt;
+            if (diffusion_ == DiffusionPhase::Windup) {
+                if (diffusion_rem_ <= 0.0) {
+                    SkillCastContext ctx{world, SkillCasterKind::Boss, nullptr, &self, 0.f, 0.f, 0, 1};
+                    bossDiffusionFireRing1(ctx);
+                    diffusion_ = DiffusionPhase::WaitRing2;
+                    diffusion_rem_ = 0.5;
+                }
+                return;
+            }
+            if (diffusion_ == DiffusionPhase::WaitRing2) {
+                if (diffusion_rem_ <= 0.0) {
+                    SkillCastContext ctx{world, SkillCasterKind::Boss, nullptr, &self, 0.f, 0.f, 0, 1};
+                    bossDiffusionFireRing2(ctx);
+                    diffusion_ = DiffusionPhase::None;
+                    armNextRingBurst(world, ring_burst_rem_);
+                    next_attack_is_fan_ = true;
+                }
+                return;
+            }
+        }
+
+        EliteHybridBehavior::tick(self, ports, world, dt);
+
+        if (ring_burst_rem_ < 0.0) {
+            armNextRingBurst(world, ring_burst_rem_);
+        }
+        ring_burst_rem_ -= dt;
+        if (ring_burst_rem_ <= 0.0 && ports.fire) {
+            if (next_attack_is_fan_) {
+                SkillCastContext ctx{world, SkillCasterKind::Boss, nullptr, &self, 0.f, 0.f, 0, 1};
+                bossFanBarrageFire(ctx);
+                armNextRingBurst(world, ring_burst_rem_);
+                next_attack_is_fan_ = false;
+            } else {
+                diffusion_ = DiffusionPhase::Windup;
+                diffusion_rem_ = 1.0;
+            }
+        }
+    }
+};
 
 std::unique_ptr<IEnemyBehavior> makeEnemyBehavior(EnemyArchetype a) {
     switch (a) {

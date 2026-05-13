@@ -19,6 +19,8 @@ struct RawInputSnapshot {
     bool pointer_confirm{false};
     bool cancel{false};
     bool toggle_theme{false};
+    /** Edge: development-only boss skill slot 1-9 (first key this frame). */
+    int dev_boss_skill_slot{0};
 };
 
 } // namespace domain

@@ -44,6 +44,10 @@ public:
     void spawnEnemyBullet(float x, float y, float vx, float vy, int damage,
                           EnemyBulletSprite sprite = EnemyBulletSprite::Generic) override;
 
+    /** Enemy bullet with optional soft homing after `straight_sec` (see `EnemyBulletActor`). */
+    void spawnEnemyBulletSoftHoming(float x, float y, float vx, float vy, int damage, EnemyBulletSprite sprite,
+                                    double straight_sec, float max_turn_rad_per_sec);
+
     void chasePlayerStep(EnemyActor& self, World& world, double dt, float chase_speed) override;
     void wanderStep(EnemyActor& self, World& world, double dt, float wander_speed,
                     float manhattan_aggro_radius) override;

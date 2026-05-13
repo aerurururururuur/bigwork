@@ -22,6 +22,9 @@ public:
 
     void setKind(int x, int y, TileKind k);
 
+    /** Interior only: every Obstacle ('O') becomes Floor; walls unchanged. */
+    void clearObstaclesToFloor();
+
 private:
     std::vector<TileKind> kinds_;
 };

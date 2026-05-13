@@ -7,6 +7,8 @@
 #include "domain/enemy_archetype.hpp"
 #include "domain/enemy_engagement_constants.hpp"
 #include "domain/screen_layout.hpp"
+#include "domain/skill.hpp"
+#include "infrastructure/game_config.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -15,13 +17,69 @@ namespace {
 
 constexpr float kAimEpsilonPx = 2.f;
 constexpr float kDustSpeedEpsilon = 0.35f;
+/** Upper bound for `RawInputSnapshot::dev_boss_skill_slot` (keys 1-9). */
+constexpr int kBossDevDigitSlotMax = 9;
+
+void dispatchDevBossManualSkill(domain::World& world, infrastructure::RunMode run_mode,
+                                const domain::RawInputSnapshot& raw) {
+    if (run_mode != infrastructure::RunMode::Development) {
+        return;
+    }
+    const int k = raw.dev_boss_skill_slot;
+    if (k <= 0 || k > kBossDevDigitSlotMax || k > domain::kBossManualSkillHotkeyCount) {
+        return;
+    }
+    domain::EnemyActor* boss = nullptr;
+    for (const auto& e : world.enemies()) {
+        if (!e || e->destroyed() || e->hp() <= 0) {
+            continue;
+        }
+        if (e->archetype() == domain::EnemyArchetype::Boss) {
+            boss = e.get();
+            break;
+        }
+    }
+    if (boss == nullptr) {
+        return;
+    }
+    domain::SkillCastContext ctx{world, domain::SkillCasterKind::Boss, nullptr, boss, 0.f, 0.f, 0, 1};
+    switch (k) {
+    case 1:
+        domain::bossDiffusionFireRing1(ctx);
+        break;
+    case 2:
+        domain::bossDiffusionFireRing2(ctx);
+        break;
+    case 3:
+        domain::bossFanBarrageFire(ctx);
+        break;
+    case 4:
+        domain::bossSpiralBurstFire(ctx);
+        break;
+    case 5:
+        domain::bossDualOpposingFanFire(ctx);
+        break;
+    case 6:
+        domain::bossCrossDualRingFire(ctx);
+        break;
+    case 7:
+        domain::bossSoftScatterFire(ctx);
+        break;
+    default:
+        break;
+    }
+}
 
 } // namespace
 
 namespace application {
 
-GameApplication::GameApplication(domain::World& world, domain::IAuditSink& audit, int logical_cell_px)
-    : world_{&world}, audit_{&audit}, cell_px_{logical_cell_px > 0 ? logical_cell_px : 16} {
+GameApplication::GameApplication(domain::World& world, domain::IAuditSink& audit, int logical_cell_px,
+                                 infrastructure::RunMode run_mode)
+    : world_{&world},
+      audit_{&audit},
+      cell_px_{logical_cell_px > 0 ? logical_cell_px : 16},
+      run_mode_{run_mode} {
     audit_->write("SESSION", "GameApplication constructed (pixel combat MVP).");
 }
 
@@ -94,6 +152,7 @@ void GameApplication::tick(double dt, const std::vector<GameCommand>& commands,
         }
 
         world_->setIntent(in);
+        dispatchDevBossManualSkill(*world_, run_mode_, raw);
         world_->simulateStep(dt);
 
         if (world_->battleOutcome() == domain::BattleOutcome::Victory) {

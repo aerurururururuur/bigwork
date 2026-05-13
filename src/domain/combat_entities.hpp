@@ -20,10 +20,10 @@ inline constexpr float kActorBodyRadius = 0.35f;
 /** Smaller player hitbox so the body fits through single-tile gaps more reliably. */
 inline constexpr float kPlayerBodyRadius = 0.26f;
 /**
- * Enemy radius used only for **player bullet** hit tests: larger than `kActorBodyRadius` so hits match
- * visible sprite overlap (Representation draws enemies bigger than this physics disc).
+ * Enemy radius for **player bullet** circle hit (center is feet minus `player_shot::kFeetToCenterWorld`,
+ * i.e. sprite torso; y grows downward).
  */
-inline constexpr float kEnemyPlayerBulletHitRadius = 0.54f;
+inline constexpr float kEnemyPlayerBulletHitRadius = 0.60f;
 /** Bullet collision radius in world units. */
 inline constexpr float kBulletBodyRadius = 0.12f;
 
@@ -169,6 +169,12 @@ public:
 protected:
     BulletActor(float x, float y, float vx, float vy, int damage, std::unique_ptr<IBulletHitPolicy> policy);
 
+    /** Default: inertial `x += vx*dt`. Enemy soft-homing overrides. */
+    virtual void integratePosition(World& world, float dt_sec);
+
+    /** Bounds, terrain, hit policy (shared after movement). */
+    void resolveBulletWorldAndHits(World& world);
+
     float x_{0.f};
     float y_{0.f};
     float vx_{0.f};
@@ -186,15 +192,27 @@ public:
 
 class EnemyBulletActor final : public BulletActor {
 public:
+    /**
+     * @param soft_homing_straight_sec if `>= 0`, bullet flies straight that many seconds then soft-turns
+     *        toward the player with limited turn rate (`max_turn_rad_per_sec`).
+     */
     EnemyBulletActor(float x, float y, float vx, float vy, int damage,
-                       EnemyBulletSprite sprite = EnemyBulletSprite::Generic);
+                     EnemyBulletSprite sprite = EnemyBulletSprite::Generic,
+                     double soft_homing_straight_sec = -1.0, float max_turn_rad_per_sec = 0.f);
     BulletFaction faction() const noexcept override { return BulletFaction::Enemy; }
     std::uint8_t enemyBulletVisual() const noexcept override {
         return static_cast<std::uint8_t>(sprite_);
     }
 
+protected:
+    void integratePosition(World& world, float dt_sec) override;
+
 private:
     EnemyBulletSprite sprite_{EnemyBulletSprite::Generic};
+    bool soft_homing_{false};
+    double straight_rem_{0.0};
+    float max_turn_rad_per_sec_{0.f};
+    float speed_scalar_{0.f};
 };
 
 } // namespace domain

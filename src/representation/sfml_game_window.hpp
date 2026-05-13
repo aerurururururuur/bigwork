@@ -23,8 +23,10 @@ namespace representation {
 class SfmlGameWindow {
 public:
     /** @param background_image_path optional PNG/JPG; stretched to full logical client area. */
+    /** @param enable_dev_boss_digit_keys when true, Num1-9 edge map to `dev_boss_skill_slot` in battle UI. */
     SfmlGameWindow(int logical_cols, int logical_rows, int cell_px,
-                   std::optional<std::filesystem::path> background_image_path = std::nullopt);
+                   std::optional<std::filesystem::path> background_image_path = std::nullopt,
+                   bool enable_dev_boss_digit_keys = false);
 
     bool isOpen() const;
     /** Returns false when the user closed the window. */
@@ -77,6 +79,7 @@ private:
     sf::Texture background_texture_{};
     sf::Sprite background_sprite_{};
     bool background_loaded_{false};
+    bool enable_dev_boss_digit_keys_{false};
 };
 
 } // namespace representation

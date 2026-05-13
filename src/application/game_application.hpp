@@ -7,6 +7,7 @@
 #include "domain/ports/iaudit_sink.hpp"
 #include "domain/raw_input.hpp"
 #include "domain/world.hpp"
+#include "infrastructure/game_config.hpp"
 
 #include <vector>
 
@@ -14,7 +15,8 @@ namespace application {
 
 class GameApplication {
 public:
-    GameApplication(domain::World& world, domain::IAuditSink& audit, int logical_cell_px);
+    GameApplication(domain::World& world, domain::IAuditSink& audit, int logical_cell_px,
+                    infrastructure::RunMode run_mode = infrastructure::RunMode::Production);
 
     GameState state() const { return state_; }
 
@@ -31,6 +33,7 @@ private:
     ThemeStyle theme_{ThemeStyle::Dusk};
     bool quit_requested_{false};
     int cell_px_{16};
+    infrastructure::RunMode run_mode_{infrastructure::RunMode::Production};
 };
 
 } // namespace application

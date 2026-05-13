@@ -33,9 +33,11 @@ bool PlayerBulletHitPolicy::resolveActorHits(BulletActor& bullet, World& world) 
         if (!e || e->hp() <= 0) {
             continue;
         }
+        // Logic (x,y) is feet; sprites extend upward; test vs. lifted center (same as shot spawn lift).
+        const float hit_y = e->y() - player_shot::kFeetToCenterWorld;
         const float dx = e->x() - bullet.x();
-        const float dy = e->y() - bullet.y();
-        if (lengthSq(dx, dy) < kHitREnemyForPlayerBulletSq) {
+        const float dy = hit_y - bullet.y();
+        if (lengthSq(dx, dy) <= kHitREnemyForPlayerBulletSq) {
             e->applyDamage(std::max(1, bullet.damage()), &world);
             return true;
         }
@@ -44,9 +46,10 @@ bool PlayerBulletHitPolicy::resolveActorHits(BulletActor& bullet, World& world) 
 }
 
 bool EnemyBulletHitPolicy::resolveActorHits(BulletActor& bullet, World& world) {
+    const float hit_y = world.player().y() - player_shot::kFeetToCenterWorld;
     const float dx = world.player().x() - bullet.x();
-    const float dy = world.player().y() - bullet.y();
-    if (lengthSq(dx, dy) < kHitRPlayerForEnemyBulletSq) {
+    const float dy = hit_y - bullet.y();
+    if (lengthSq(dx, dy) <= kHitRPlayerForEnemyBulletSq) {
         world.onEnemyBulletHitPlayer(std::max(1, bullet.damage()));
         return true;
     }
