@@ -109,6 +109,7 @@ GameApplication::GameApplication(domain::World& world, domain::IAuditSink& audit
     br.tier2_score = cfg.player_damage_score_tier2;
     br.tier2_mult = cfg.player_damage_mult_tier2;
     world_->setPlayerDamageScoreBrackets(br);
+    world_->setWaveRuntimeConfig(cfg.wave);
     audit_->write("SESSION", "GameApplication constructed (pixel combat MVP).");
 }
 
@@ -277,7 +278,7 @@ void GameApplication::tick(double dt, const std::vector<GameCommand>& commands,
         } else {
             const bool has_boss = worldHasLivingBoss(*world_);
             if (!had_living_boss_ && has_boss && !boss_intro_dialog_fired_) {
-                enqueueDialog(std::vector<std::string>{"喵喵喵？"});
+                enqueueDialog(std::vector<std::string>{"Meow?"});
                 boss_intro_dialog_fired_ = true;
                 audit_->write("DIALOG", "boss intro queued");
             }

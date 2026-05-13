@@ -128,6 +128,17 @@ public:
     }
 };
 
+/** Boss-phase adds: always chase the player (no wander-at-range band). */
+class BossMinionChaseBehavior final : public IEnemyBehavior {
+public:
+    void tick(EnemyActor& self, CombatActorPorts ports, World& world, double dt) override {
+        if (!ports.melee) {
+            return;
+        }
+        ports.melee->chasePlayerStep(self, world, dt, wave_combat::kBossPhaseAddChaseSpeed);
+    }
+};
+
 /**
  * Boss: stationary; early HP uses ring diffusion + fan alternation.
  * Mid/Late HP uses a spell-card sequence (windup -> dual ring -> dual fan -> soft scatter -> cross rings -> vulnerable).
@@ -330,6 +341,8 @@ std::unique_ptr<IEnemyBehavior> makeEnemyBehavior(EnemyArchetype a) {
         return std::make_unique<EliteHybridBehavior>();
     case EnemyArchetype::Boss:
         return std::make_unique<BossHybridBehavior>();
+    case EnemyArchetype::BossMinion:
+        return std::make_unique<BossMinionChaseBehavior>();
     default:
         return std::make_unique<MeleeChaseBehavior>();
     }

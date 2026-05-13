@@ -37,6 +37,27 @@ constexpr EnemySpawnRow kEnemySpawnTable[] = {
     {EnemySpriteId::Pebblin, EnemyArchetype::EliteHybrid},
 };
 
+constexpr float kBossPhaseAddSpawnManhattanMin = 5.f;
+
+bool livingBossPresent(const std::vector<std::unique_ptr<EnemyActor>>& enemies) {
+    for (const auto& e : enemies) {
+        if (e && e->hp() > 0 && e->archetype() == EnemyArchetype::Boss) {
+            return true;
+        }
+    }
+    return false;
+}
+
+int livingBossMinionCount(const std::vector<std::unique_ptr<EnemyActor>>& enemies) {
+    int n = 0;
+    for (const auto& e : enemies) {
+        if (e && e->hp() > 0 && e->archetype() == EnemyArchetype::BossMinion) {
+            ++n;
+        }
+    }
+    return n;
+}
+
 EnemySpawnRow pickSpawnRowForWave(int placed, int wave_number, IRandom& rng) {
     EnemySpawnRow row = kEnemySpawnTable[(placed + std::max(1, wave_number) - 1) % 4];
     if (wave_number >= 2 && placed == 0) {
@@ -132,6 +153,7 @@ void World::resetBattle() {
     boss_released_ = false;
     mob_wave_index_ = 1;
     wave_intermission_rem_ = 0.0;
+    boss_add_spawn_rem_ = 0.0;
     player_bullet_max_travel_world_ = wave_combat::kPlayerMobBulletTravelWorld;
 
     const int w = playfield_.width();
@@ -152,7 +174,7 @@ void World::resetBattle() {
 }
 
 void World::scatterObstacles() {
-    const int n = wave_combat::kScatterObstacleBase + rng_.uniformInt(0, wave_combat::kScatterObstacleExtraRoll);
+    const int n = wave_cfg_.scatter_obstacle_base + rng_.uniformInt(0, wave_cfg_.scatter_obstacle_extra_roll);
     for (int i = 0; i < n; ++i) {
         for (int t = 0; t < kScatterTriesPerObstacle; ++t) {
             const int x = rng_.uniformInt(2, playfield_.width() - 3);
@@ -173,9 +195,8 @@ void World::scatterObstacles() {
 
 void World::spawnEnemiesForWave(int wave_number) {
     const int wn = std::max(1, wave_number);
-    const int count = std::min(wave_combat::kMobSpawnMaxCount,
-                                 wave_combat::kMobSpawnBaseCount +
-                                     (wn - 1) * wave_combat::kMobSpawnPerWaveExtra);
+    const int count = std::min(wave_cfg_.mob_spawn_max_count,
+                                 wave_cfg_.mob_spawn_base_count + (wn - 1) * wave_cfg_.mob_spawn_per_wave_extra);
     int placed = 0;
     for (int tries = 0; placed < count && tries < kEnemySpawnMaxTries; ++tries) {
         const int x = rng_.uniformInt(1, playfield_.width() - 2);
@@ -224,7 +245,7 @@ void World::maybeSpawnBossAfterWaveClear(double dt) {
         return;
     }
 
-    if (mob_wave_index_ < wave_combat::kMobWavesBeforeBoss) {
+    if (mob_wave_index_ < wave_cfg_.mob_waves_before_boss) {
         if (wave_intermission_rem_ > 0.0) {
             wave_intermission_rem_ -= dt;
             if (wave_intermission_rem_ <= 0.0) {
@@ -234,7 +255,7 @@ void World::maybeSpawnBossAfterWaveClear(double dt) {
                 spawnEnemiesForWave(mob_wave_index_);
             }
         } else {
-            wave_intermission_rem_ = wave_combat::kWaveIntermissionSec;
+            wave_intermission_rem_ = wave_cfg_.wave_intermission_sec;
         }
         return;
     }
@@ -253,6 +274,54 @@ void World::maybeSpawnBossAfterWaveClear(double dt) {
     enemies_.push_back(std::move(boss));
     player_bullet_max_travel_world_ = wave_combat::kPlayerBossBulletTravelWorld;
     boss_released_ = true;
+    boss_add_spawn_rem_ = wave_combat::kBossPhaseAddSpawnIntervalSec;
+}
+
+void World::tickBossPhaseAdds(double dt) {
+    if (!boss_released_) {
+        return;
+    }
+    if (!livingBossPresent(enemies_)) {
+        return;
+    }
+    boss_add_spawn_rem_ -= dt;
+    if (boss_add_spawn_rem_ > 0.0) {
+        return;
+    }
+    trySpawnBossPhaseAdd();
+    boss_add_spawn_rem_ = wave_combat::kBossPhaseAddSpawnIntervalSec;
+}
+
+void World::trySpawnBossPhaseAdd() {
+    if (!livingBossPresent(enemies_)) {
+        return;
+    }
+    if (livingBossMinionCount(enemies_) >= wave_combat::kBossPhaseAddMaxAlive) {
+        return;
+    }
+    for (int tries = 0; tries < kEnemySpawnMaxTries; ++tries) {
+        const int x = rng_.uniformInt(1, playfield_.width() - 2);
+        const int y = rng_.uniformInt(1, playfield_.height() - 2);
+        if (!playfield_.walkable(x, y)) {
+            continue;
+        }
+        const float ex = static_cast<float>(x) + kPlayerSpawnInset;
+        const float ey = static_cast<float>(y) + kPlayerSpawnInset;
+        if (std::abs(ex - player_.x_) + std::abs(ey - player_.y_) < kBossPhaseAddSpawnManhattanMin) {
+            continue;
+        }
+        if (!enemyFitsAt(ex, ey, nullptr)) {
+            continue;
+        }
+        auto m = std::make_unique<EnemyActor>();
+        m->x_ = ex;
+        m->y_ = ey;
+        const EnemySpriteId sp =
+            rng_.uniformInt(0, 1) == 0 ? EnemySpriteId::Slime : EnemySpriteId::BugBit;
+        m->resetForSpawn(EnemyArchetype::BossMinion, sp);
+        enemies_.push_back(std::move(m));
+        return;
+    }
 }
 
 void World::simulateStep(double dt) {
@@ -279,6 +348,7 @@ void World::simulateStep(double dt) {
     applyContactDamage(dt);
     score_.tick(dt);
     maybeSpawnBossAfterWaveClear(dt);
+    tickBossPhaseAdds(dt);
     evaluateBattleOutcome();
 }
 
@@ -458,6 +528,10 @@ void World::setPlayerDamageScoreBrackets(const PlayerDamageScoreBrackets& b) {
     player_damage_brackets_.tier2_mult = std::max(1.f, player_damage_brackets_.tier2_mult);
 }
 
+void World::setWaveRuntimeConfig(const WaveRuntimeConfig& c) {
+    wave_cfg_ = c;
+}
+
 float World::playerOutgoingDamageMultiplier() const {
     const int s = score_.totalScore();
     if (s > player_damage_brackets_.tier2_score) {
@@ -555,16 +629,15 @@ void World::evaluateBattleOutcome() {
 }
 
 int World::battleHudMobWave() const {
-    if (!boss_released_ && wave_intermission_rem_ > 0.0 &&
-        mob_wave_index_ < wave_combat::kMobWavesBeforeBoss) {
+    if (!boss_released_ && wave_intermission_rem_ > 0.0 && mob_wave_index_ < wave_cfg_.mob_waves_before_boss) {
         const int next = mob_wave_index_ + 1;
-        return std::min(next, wave_combat::kMobWavesBeforeBoss);
+        return std::min(next, wave_cfg_.mob_waves_before_boss);
     }
     return mob_wave_index_;
 }
 
 int World::mobWavesTotal() const {
-    return wave_combat::kMobWavesBeforeBoss;
+    return wave_cfg_.mob_waves_before_boss;
 }
 
 int World::enemiesAliveCount() const {

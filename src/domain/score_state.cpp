@@ -32,6 +32,8 @@ int TableScoreRule::basePoints(EnemyArchetype t) {
         return 35;
     case EnemyArchetype::Boss:
         return 80;
+    case EnemyArchetype::BossMinion:
+        return 8;
     default:
         return 10;
     }

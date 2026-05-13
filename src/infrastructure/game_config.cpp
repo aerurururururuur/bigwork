@@ -65,6 +65,17 @@ std::optional<std::filesystem::path> resolveAssetFile(const std::filesystem::pat
 
 } // namespace
 
+static void normalizeWaveRuntime(domain::WaveRuntimeConfig& w) {
+    w.mob_waves_before_boss = std::clamp(w.mob_waves_before_boss, 1, 99);
+    w.wave_intermission_sec = std::clamp(w.wave_intermission_sec, 0.0, 120.0);
+    w.mob_spawn_base_count = std::clamp(w.mob_spawn_base_count, 1, 80);
+    w.mob_spawn_per_wave_extra = std::clamp(w.mob_spawn_per_wave_extra, 0, 40);
+    w.mob_spawn_max_count = std::max(w.mob_spawn_max_count, w.mob_spawn_base_count);
+    w.mob_spawn_max_count = std::clamp(w.mob_spawn_max_count, 1, 128);
+    w.scatter_obstacle_base = std::clamp(w.scatter_obstacle_base, 0, 100);
+    w.scatter_obstacle_extra_roll = std::clamp(w.scatter_obstacle_extra_roll, 0, 60);
+}
+
 static void normalizePlayerDamageTiers(GameConfig& cfg) {
     if (cfg.player_damage_score_tier2 <= cfg.player_damage_score_tier1) {
         cfg.player_damage_score_tier1 = 100;
@@ -142,9 +153,45 @@ GameConfig loadGameConfigFromIni(const std::filesystem::path& path) {
                 cfg.player_damage_mult_tier2 = static_cast<float>(std::stod(val));
             } catch (...) {
             }
+        } else if (key == "wave_mob_waves_before_boss" && !val.empty()) {
+            try {
+                cfg.wave.mob_waves_before_boss = std::stoi(val);
+            } catch (...) {
+            }
+        } else if (key == "wave_intermission_sec" && !val.empty()) {
+            try {
+                cfg.wave.wave_intermission_sec = std::stod(val);
+            } catch (...) {
+            }
+        } else if (key == "wave_mob_spawn_base" && !val.empty()) {
+            try {
+                cfg.wave.mob_spawn_base_count = std::stoi(val);
+            } catch (...) {
+            }
+        } else if (key == "wave_mob_spawn_per_wave_extra" && !val.empty()) {
+            try {
+                cfg.wave.mob_spawn_per_wave_extra = std::stoi(val);
+            } catch (...) {
+            }
+        } else if (key == "wave_mob_spawn_max" && !val.empty()) {
+            try {
+                cfg.wave.mob_spawn_max_count = std::stoi(val);
+            } catch (...) {
+            }
+        } else if (key == "wave_scatter_base" && !val.empty()) {
+            try {
+                cfg.wave.scatter_obstacle_base = std::stoi(val);
+            } catch (...) {
+            }
+        } else if (key == "wave_scatter_extra_roll" && !val.empty()) {
+            try {
+                cfg.wave.scatter_obstacle_extra_roll = std::stoi(val);
+            } catch (...) {
+            }
         }
     }
     normalizePlayerDamageTiers(cfg);
+    normalizeWaveRuntime(cfg.wave);
     return cfg;
 }
 

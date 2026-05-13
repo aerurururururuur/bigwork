@@ -9,6 +9,7 @@
 #include "domain/ports/irandom.hpp"
 #include "domain/score_state.hpp"
 #include "domain/wave_combat_tuning.hpp"
+#include "domain/wave_runtime_config.hpp"
 
 #include <memory>
 #include <vector>
@@ -90,6 +91,9 @@ public:
     /** Called once at boot from `GameConfig` (not reset per battle). */
     void setPlayerDamageScoreBrackets(const PlayerDamageScoreBrackets& b);
 
+    /** Called once at boot from `GameConfig` (not reset per battle). */
+    void setWaveRuntimeConfig(const WaveRuntimeConfig& c);
+
     void onBossDamagedByPlayer(int scaled_hp_lost);
 
     /** Debug: instant-kill every enemy with hp > 0 (score/drops via normal `applyDamage`). */
@@ -104,6 +108,8 @@ private:
     void scatterObstacles();
     void spawnEnemiesForWave(int wave_number);
     void maybeSpawnBossAfterWaveClear(double dt);
+    void tickBossPhaseAdds(double dt);
+    void trySpawnBossPhaseAdd();
     void cullDynamics();
     void evaluateBattleOutcome();
     void applyContactDamage(double dt);
@@ -129,12 +135,15 @@ private:
     double contact_hurt_cool_{0.0};
     ScoreState score_;
     PlayerDamageScoreBrackets player_damage_brackets_{};
+    WaveRuntimeConfig wave_cfg_{};
     std::vector<CombatVfxEvent> vfx_pending_;
     /** After all mob waves cleared, a single boss is spawned; then empty field means victory. */
     bool boss_released_{false};
     int mob_wave_index_{1};
     double wave_intermission_rem_{0.0};
     float player_bullet_max_travel_world_{wave_combat::kPlayerMobBulletTravelWorld};
+    /** While Boss is alive: countdown to spawn next `BossMinion` (see `tickBossPhaseAdds`). */
+    double boss_add_spawn_rem_{0.0};
 };
 
 } // namespace domain

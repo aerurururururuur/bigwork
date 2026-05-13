@@ -26,6 +26,8 @@ std::uint8_t enemyArchetypeColorId(std::uint8_t archetype) {
         return 45;
     case 3:
         return 46;
+    case 4:
+        return 43;
     default:
         return 45;
     }

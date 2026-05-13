@@ -3,6 +3,8 @@
 #include <filesystem>
 #include <optional>
 
+#include "domain/wave_runtime_config.hpp"
+
 namespace infrastructure {
 
 enum class RunMode {
@@ -21,6 +23,9 @@ struct GameConfig {
     int music_volume{70};
     /** `run_mode=production` (default) or `development` (Boss digit hotkeys). */
     RunMode run_mode{RunMode::Production};
+
+    /** Mob waves, per-wave spawn formula, obstacle scatter (`wave_*` keys in INI). */
+    domain::WaveRuntimeConfig wave{};
 
     /** When total score > tier1_score, player bullet/skill damage multiplies by tier1 (default 100 / 1.2). */
     int player_damage_score_tier1{100};

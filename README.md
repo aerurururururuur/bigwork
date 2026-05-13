@@ -64,7 +64,7 @@ background_image=assets/your_background.png
 
 ### 多波次杂兵、玩家子弹射程与胜利条件
 
-- Boss 前共 **3** 波杂兵（可调 `src/domain/wave_combat_tuning.hpp` 中 `kMobWavesBeforeBoss`）；每波生成数量随波次略增（有上限），清光非 Boss 敌人后进入 **约 2 秒** 休整，再随机散布障碍并刷新下一波。
+- Boss 前杂兵波次、休整时长、每波数量与障碍散布由 `game_config.ini` 中 `wave_*` 键配置（缺省与原先内置数值一致：3 波、休整约 2 秒、生成数量随波次略增有上限）；清光非 Boss 敌人后进入休整，再随机散布障碍并刷新下一波。
 - **胜利**：仅当 **Boss 已生成**（`boss_released` 语义）且场上 **无任何存活敌人** 时判定；波间场上暂时无人 **不会** 判胜。
 - **玩家子弹最大飞行距离**：杂兵阶段较短，Boss 登场后自动切换为远距离档；普攻与 **Q 环形齐射** 共用 `World::spawnPlayerBullet`。具体世界单位见 `kPlayerMobBulletTravelWorld` / `kPlayerBossBulletTravelWorld`。
 - **杂兵远程 / 精英远程弹**：最大飞行距离与杂兵阶段主角子弹相同（`kPlayerMobBulletTravelWorld`）；Boss 本体弹幕仍不限该距离。

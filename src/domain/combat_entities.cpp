@@ -257,6 +257,10 @@ void EnemyActor::configureForArchetype(EnemyArchetype a) {
         boss_hurt_anim_rem_ = 0.0;
         boss_cast_anim_rem_ = 0.0;
         break;
+    case EnemyArchetype::BossMinion:
+        max_hp_ = hp_ = wave_combat::kBossPhaseAddHp;
+        enemy_fire_period_ = 999.0;
+        break;
     default:
         max_hp_ = hp_ = wave_combat::kMobEliteHp;
         enemy_fire_period_ = wave_combat::kMobEliteFirePeriod;
