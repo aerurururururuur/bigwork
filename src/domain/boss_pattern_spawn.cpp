@@ -16,7 +16,7 @@ constexpr float kTwoPi = 6.2831853071795864769f;
 
 void boss_pattern_spawn_fan_sector(World& world, float cx, float cy, float angle_center_rad,
                                    float half_width_rad, int count, float bullet_speed, float muzzle_dist,
-                                   int damage, EnemyBulletSprite sprite) {
+                                   int damage, EnemyBulletSprite sprite, std::uint8_t boss_bullet_strip) {
     if (count <= 0) {
         return;
     }
@@ -27,13 +27,13 @@ void boss_pattern_spawn_fan_sector(World& world, float cx, float cy, float angle
         float by = std::sin(a);
         normalizeOrDefault(bx, by);
         world.spawnEnemyBullet(cx + bx * muzzle_dist, cy + by * muzzle_dist, bx * bullet_speed,
-                               by * bullet_speed, damage, sprite);
+                               by * bullet_speed, damage, sprite, boss_bullet_strip);
     }
 }
 
 void boss_pattern_spawn_ring_radial(World& world, float cx, float cy, float radius, int count,
                                     float bullet_speed, bool velocity_outward, float muzzle_extra,
-                                    int damage, EnemyBulletSprite sprite) {
+                                    int damage, EnemyBulletSprite sprite, std::uint8_t boss_bullet_strip) {
     if (count <= 0 || radius <= 1e-4f) {
         return;
     }
@@ -49,13 +49,14 @@ void boss_pattern_spawn_ring_radial(World& world, float cx, float cy, float radi
             vy = -vy;
         }
         normalizeOrDefault(vx, vy);
-        world.spawnEnemyBullet(px, py, vx * bullet_speed, vy * bullet_speed, damage, sprite);
+        world.spawnEnemyBullet(px, py, vx * bullet_speed, vy * bullet_speed, damage, sprite, boss_bullet_strip);
     }
 }
 
 void boss_pattern_spawn_spiral_snapshot(World& world, float cx, float cy, int bullet_count, float turns,
                                         float radius_start, float radius_end, float tangent_speed,
-                                        int damage, EnemyBulletSprite sprite, bool clockwise) {
+                                        int damage, EnemyBulletSprite sprite, bool clockwise,
+                                        std::uint8_t boss_bullet_strip) {
     if (bullet_count <= 0) {
         return;
     }
@@ -73,14 +74,14 @@ void boss_pattern_spawn_spiral_snapshot(World& world, float cx, float cy, int bu
             ty = -ty;
         }
         normalizeOrDefault(tx, ty);
-        world.spawnEnemyBullet(ox, oy, tx * tangent_speed, ty * tangent_speed, damage, sprite);
+        world.spawnEnemyBullet(ox, oy, tx * tangent_speed, ty * tangent_speed, damage, sprite, boss_bullet_strip);
     }
 }
 
 void boss_pattern_spawn_dual_opposing_fans(World& world, float cx, float cy, float aim_at_px,
                                            float aim_at_py, int count_per_fan, float half_width_rad,
                                            float bullet_speed, float muzzle_dist, int damage,
-                                           EnemyBulletSprite sprite) {
+                                           EnemyBulletSprite sprite, std::uint8_t boss_bullet_strip) {
     float dx = aim_at_px - cx;
     float dy = aim_at_py - cy;
     float theta = 0.f;
@@ -89,24 +90,25 @@ void boss_pattern_spawn_dual_opposing_fans(World& world, float cx, float cy, flo
     }
     constexpr float kHalfPi = 1.57079632679489661923f;
     boss_pattern_spawn_fan_sector(world, cx, cy, theta + kHalfPi, half_width_rad, count_per_fan, bullet_speed,
-                                  muzzle_dist, damage, sprite);
+                                  muzzle_dist, damage, sprite, boss_bullet_strip);
     boss_pattern_spawn_fan_sector(world, cx, cy, theta - kHalfPi, half_width_rad, count_per_fan, bullet_speed,
-                                  muzzle_dist, damage, sprite);
+                                  muzzle_dist, damage, sprite, boss_bullet_strip);
 }
 
 void boss_pattern_spawn_cross_dual_ring(World& world, float cx, float cy, float radius_outer,
                                         float radius_inner, int count_outer, int count_inner,
                                         float speed_outer, float speed_inner, float muzzle_extra, int damage,
-                                        EnemyBulletSprite sprite) {
+                                        EnemyBulletSprite sprite, std::uint8_t boss_bullet_strip) {
     boss_pattern_spawn_ring_radial(world, cx, cy, radius_outer, count_outer, speed_outer, true, muzzle_extra,
-                                   damage, sprite);
+                                   damage, sprite, boss_bullet_strip);
     boss_pattern_spawn_ring_radial(world, cx, cy, radius_inner, count_inner, speed_inner, false, muzzle_extra,
-                                   damage, sprite);
+                                   damage, sprite, boss_bullet_strip);
 }
 
 void boss_pattern_spawn_soft_scatter(World& world, float cx, float cy, float aim_angle_rad, int count,
                                        float spread_half_rad, float bullet_speed, double straight_sec,
-                                       float max_turn_rad_per_sec, float muzzle_dist, int damage) {
+                                       float max_turn_rad_per_sec, float muzzle_dist, int damage,
+                                       EnemyBulletSprite sprite, std::uint8_t boss_bullet_strip) {
     if (count <= 0 || straight_sec < 0.0) {
         return;
     }
@@ -117,14 +119,15 @@ void boss_pattern_spawn_soft_scatter(World& world, float cx, float cy, float aim
         float by = std::sin(a);
         normalizeOrDefault(bx, by);
         world.spawnEnemyBulletSoftHoming(cx + bx * muzzle_dist, cy + by * muzzle_dist, bx * bullet_speed,
-                                         by * bullet_speed, damage, EnemyBulletSprite::PebblinRock, straight_sec,
-                                         max_turn_rad_per_sec);
+                                         by * bullet_speed, damage, sprite, straight_sec, max_turn_rad_per_sec,
+                                         boss_bullet_strip);
     }
 }
 
 void boss_pattern_spawn_wall_volley(World& world, float player_x, float boss_x, int playfield_width_cells,
                                     int playfield_height_cells, int bullet_count, float bullet_speed,
-                                    float wall_inset, float y_margin, int damage, EnemyBulletSprite sprite) {
+                                    float wall_inset, float y_margin, int damage, EnemyBulletSprite sprite,
+                                    std::uint8_t boss_bullet_strip) {
     if (bullet_count <= 0 || playfield_width_cells <= 0 || playfield_height_cells <= 0) {
         return;
     }
@@ -142,7 +145,7 @@ void boss_pattern_spawn_wall_volley(World& world, float player_x, float boss_x, 
         const float t =
             (bullet_count <= 1) ? 0.5f : static_cast<float>(i) / static_cast<float>(bullet_count - 1);
         const float y = y0 + t * (y1 - y0);
-        world.spawnEnemyBullet(spawn_x, y, vx, 0.f, damage, sprite);
+        world.spawnEnemyBullet(spawn_x, y, vx, 0.f, damage, sprite, boss_bullet_strip);
     }
 }
 

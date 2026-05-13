@@ -38,7 +38,7 @@ inline constexpr float kMuzzleOffsetWorld = 0.06f;
 enum class PlayerCharacterId : std::uint8_t { Role1 = 0, Role2 = 1 };
 
 inline std::uint8_t playerBulletVisualForCharacter(PlayerCharacterId c) noexcept {
-    return c == PlayerCharacterId::Role2 ? static_cast<std::uint8_t>(1) : static_cast<std::uint8_t>(0);
+    return c == PlayerCharacterId::Role2 ? static_cast<std::uint8_t>(1) : static_cast<std::uint8_t>(2);
 }
 
 struct PlayerIntent {
@@ -153,6 +153,16 @@ public:
     /** Move with sliding collision (world units/sec velocity). */
     void integrateVelocity(World& world, float mx, float my, float dt);
 
+    /** Decrement boss-only presentation timers (call each step). */
+    void tickBossPresentationTimers(double dt);
+    /** Brief hurt flash for boss portrait strip. */
+    void armBossHurtFlash();
+    /** Boss skill / windup visual (shooting strip); longer duration wins if stacked. */
+    void armBossCastVisual(double seconds);
+
+    double bossHurtAnimRem() const noexcept { return boss_hurt_anim_rem_; }
+    double bossCastAnimRem() const noexcept { return boss_cast_anim_rem_; }
+
 private:
     friend class World;
 
@@ -170,6 +180,8 @@ private:
     double enemy_fire_period_{0.85};
     std::unique_ptr<IEnemyBehavior> behavior_;
     float incoming_damage_multiplier_{1.f};
+    double boss_hurt_anim_rem_{0.0};
+    double boss_cast_anim_rem_{0.0};
 };
 
 /** Base bullet: movement, terrain, hit policy; subclasses only fix faction / policy wiring. */
@@ -187,6 +199,8 @@ public:
     virtual BulletFaction faction() const noexcept = 0;
     /** Non-zero only for enemy bullets; used by Application snapshot (no RTTI). */
     virtual std::uint8_t enemyBulletVisual() const noexcept { return 0; }
+    /** Boss bullet folder index `0..5` when `enemyBulletVisual()==2`; else 0. */
+    virtual std::uint8_t enemyBulletStrip() const noexcept { return 0; }
     /** Non-zero for player bullets with alternate art (e.g. Role2 book). */
     virtual std::uint8_t playerBulletVisual() const noexcept { return 0; }
 
@@ -234,21 +248,30 @@ public:
      */
     EnemyBulletActor(float x, float y, float vx, float vy, int damage,
                      EnemyBulletSprite sprite = EnemyBulletSprite::Generic,
-                     double soft_homing_straight_sec = -1.0, float max_turn_rad_per_sec = 0.f);
+                     std::uint8_t boss_bullet_strip = 0, double soft_homing_straight_sec = -1.0,
+                     float max_turn_rad_per_sec = 0.f, float max_travel_sq = -1.f);
     BulletFaction faction() const noexcept override { return BulletFaction::Enemy; }
     std::uint8_t enemyBulletVisual() const noexcept override {
         return static_cast<std::uint8_t>(sprite_);
     }
+    std::uint8_t enemyBulletStrip() const noexcept override { return boss_bullet_strip_; }
+    std::uint8_t bossBulletStrip() const noexcept { return boss_bullet_strip_; }
 
 protected:
     void integratePosition(World& world, float dt_sec) override;
 
 private:
     EnemyBulletSprite sprite_{EnemyBulletSprite::Generic};
+    std::uint8_t boss_bullet_strip_{0};
     bool soft_homing_{false};
     double straight_rem_{0.0};
     float max_turn_rad_per_sec_{0.f};
     float speed_scalar_{0.f};
+    float spawn_x_{0.f};
+    float spawn_y_{0.f};
+    float max_travel_sq_{-1.f};
+
+    void checkMaxTravelAfterStep();
 };
 
 } // namespace domain

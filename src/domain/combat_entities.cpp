@@ -14,9 +14,8 @@ namespace domain {
 
 namespace {
 
-constexpr float kPlayerSpeed = 6.0f;
-constexpr int kPlayerFireMpCost = 1;
-constexpr double kPlayerMpRegenPerSec = 6.0;
+constexpr float kPlayerSpeed = 8.4f;
+constexpr double kPlayerMpRegenPerSec = 2.75;
 
 } // namespace
 
@@ -46,14 +45,30 @@ void PlayerBulletActor::integratePosition(World& world, float fdt) {
 }
 
 EnemyBulletActor::EnemyBulletActor(float x, float y, float vx, float vy, int damage, EnemyBulletSprite sprite,
-                                   double soft_homing_straight_sec, float max_turn_rad_per_sec)
+                                   std::uint8_t boss_bullet_strip, double soft_homing_straight_sec,
+                                   float max_turn_rad_per_sec, float max_travel_sq)
     : BulletActor(x, y, vx, vy, damage, makeBulletHitPolicy(BulletFaction::Enemy)),
       sprite_(sprite),
+      boss_bullet_strip_(boss_bullet_strip),
       soft_homing_(soft_homing_straight_sec >= 0.0),
       straight_rem_(soft_homing_ ? soft_homing_straight_sec : 0.0),
-      max_turn_rad_per_sec_(soft_homing_ && max_turn_rad_per_sec > 1e-5f ? max_turn_rad_per_sec : 1.2f) {
+      max_turn_rad_per_sec_(soft_homing_ && max_turn_rad_per_sec > 1e-5f ? max_turn_rad_per_sec : 1.2f),
+      spawn_x_(x),
+      spawn_y_(y),
+      max_travel_sq_(max_travel_sq) {
     const float sp = length(vx, vy);
     speed_scalar_ = sp > kEpsilon ? sp : 7.0f;
+}
+
+void EnemyBulletActor::checkMaxTravelAfterStep() {
+    if (max_travel_sq_ <= 0.f) {
+        return;
+    }
+    const float dx = x_ - spawn_x_;
+    const float dy = y_ - spawn_y_;
+    if (lengthSq(dx, dy) > max_travel_sq_) {
+        dead_ = true;
+    }
 }
 
 EnemyActor::~EnemyActor() = default;
@@ -122,7 +137,7 @@ void PlayerActor::step(World& world, double dt) {
         y_ = ny;
     }
 
-    if (in.fire && fire_cool_ <= 0.0 && mp_ >= kPlayerFireMpCost) {
+    if (in.fire && fire_cool_ <= 0.0) {
         float bx = 0.f;
         float by = 0.f;
         if (in.use_mouse_aim) {
@@ -148,7 +163,6 @@ void PlayerActor::step(World& world, double dt) {
             std::max(1, static_cast<int>(std::lround(static_cast<double>(damage_) * mult)));
         world.spawnPlayerBullet(ox, oy, bx * player_shot::kBulletSpeed, by * player_shot::kBulletSpeed, out_dmg,
                                 playerBulletVisualForCharacter(character_id_));
-        mp_ -= kPlayerFireMpCost;
         fire_cool_ = fire_period_;
     }
 
@@ -240,6 +254,8 @@ void EnemyActor::configureForArchetype(EnemyArchetype a) {
     case EnemyArchetype::Boss:
         max_hp_ = hp_ = wave_combat::kMobBossHp;
         enemy_fire_period_ = wave_combat::kMobBossFirePeriod;
+        boss_hurt_anim_rem_ = 0.0;
+        boss_cast_anim_rem_ = 0.0;
         break;
     default:
         max_hp_ = hp_ = wave_combat::kMobEliteHp;
@@ -266,8 +282,27 @@ void EnemyActor::applyDamage(int amount, World* world) {
     if (world != nullptr && archetype_ == EnemyArchetype::Boss && scaled > 0) {
         world->onBossDamagedByPlayer(scaled);
     }
+    if (archetype_ == EnemyArchetype::Boss && scaled > 0) {
+        armBossHurtFlash();
+    }
     if (hp_ == 0 && world != nullptr) {
         world->notifyEnemyKilled(*this);
+    }
+}
+
+void EnemyActor::tickBossPresentationTimers(double dt) {
+    boss_hurt_anim_rem_ = std::max(0.0, boss_hurt_anim_rem_ - dt);
+    boss_cast_anim_rem_ = std::max(0.0, boss_cast_anim_rem_ - dt);
+}
+
+void EnemyActor::armBossHurtFlash() {
+    constexpr double kSec = 0.22;
+    boss_hurt_anim_rem_ = std::max(boss_hurt_anim_rem_, kSec);
+}
+
+void EnemyActor::armBossCastVisual(double seconds) {
+    if (seconds > 0.0) {
+        boss_cast_anim_rem_ = std::max(boss_cast_anim_rem_, seconds);
     }
 }
 
@@ -294,6 +329,7 @@ void EnemyActor::step(World& world, double dt) {
     ports.fire = static_cast<IBulletFirePort*>(&world);
     ports.melee = static_cast<IMeleeEngagePort*>(&world);
     behavior_->tick(*this, ports, world, dt);
+    tickBossPresentationTimers(dt);
 }
 
 bool BulletActor::destroyed() const noexcept {
@@ -338,11 +374,13 @@ void BulletActor::step(World& world, double dt) {
 void EnemyBulletActor::integratePosition(World& world, float fdt) {
     if (!soft_homing_) {
         BulletActor::integratePosition(world, fdt);
+        checkMaxTravelAfterStep();
         return;
     }
     if (straight_rem_ > 0.0) {
         straight_rem_ -= static_cast<double>(fdt);
         BulletActor::integratePosition(world, fdt);
+        checkMaxTravelAfterStep();
         return;
     }
 
@@ -369,6 +407,7 @@ void EnemyBulletActor::integratePosition(World& world, float fdt) {
     vy_ = std::sin(newa) * speed_scalar_;
 
     BulletActor::integratePosition(world, fdt);
+    checkMaxTravelAfterStep();
 }
 
 } // namespace domain

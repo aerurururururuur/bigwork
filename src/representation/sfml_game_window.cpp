@@ -153,8 +153,15 @@ SfmlGameWindow::SfmlGameWindow(int logical_cols, int logical_rows, int cell_px,
     if (player_book_bullet_tex_.loadFromFile("assets/sprites/bullets/Book.png")) {
         player_book_bullet_ready_ = true;
     }
+    if (player_role1_bullet_tex_.loadFromFile("assets/sprites/bullets/red.png")) {
+        player_role1_bullet_ready_ = true;
+    }
 
     (void)enemy_visuals_.load_from_file("assets/sprites/enemy_visuals.json");
+
+    boss_bullet_frames_.load_from_directory("assets/sprites/bullets/boss");
+
+    boss_cat_resources_ = BossCatResources::load_from_file("assets/sprites/boss/boss1/boss_cat_sheet.json");
 
     if (background_image_path && !background_image_path->empty()) {
         std::error_code ec;
@@ -264,6 +271,12 @@ bool SfmlGameWindow::pollInput(domain::RawInputSnapshot& out, const application:
                 if (slot != 0 && out.dev_boss_skill_slot == 0) {
                     out.dev_boss_skill_slot = slot;
                 }
+            } else if (view.title_screen && view.battle_outcome == application::BattleOutcomeView::None) {
+                if (event.key.code == sf::Keyboard::Up) {
+                    out.title_menu_nav_up = true;
+                } else if (event.key.code == sf::Keyboard::Down) {
+                    out.title_menu_nav_down = true;
+                }
             }
         }
         if (event.type == sf::Event::MouseButtonPressed && event.mouseButton.button == sf::Mouse::Left) {
@@ -275,7 +288,8 @@ bool SfmlGameWindow::pollInput(domain::RawInputSnapshot& out, const application:
                 if (lp.x >= 0.f && lp.y >= 0.f && lp.x < lw && lp.y < lh) {
                     const int col = static_cast<int>(std::floor(lp.x)) / cell_px_;
                     const int row = static_cast<int>(std::floor(lp.y)) / cell_px_;
-                    if (application::overlayStartButtonHit(view.overlay, col, row)) {
+                    if (!view.title_screen &&
+                        application::overlayStartButtonHit(view.overlay, col, row)) {
                         out.pointer_confirm = true;
                     }
                 }
@@ -327,7 +341,9 @@ void SfmlGameWindow::drawEnemies(const application::RenderSnapshot& snap) {
     actor_circle_.setOrigin(pr, pr);
 
     constexpr std::uint8_t kArchetypeEliteHybrid = 2;
+    constexpr std::uint8_t kArchetypeBoss = 3;
     constexpr std::uint8_t kSpritePebblin = 3;
+    constexpr std::uint8_t kSpriteBossCat = 4;
     const float anim_eps = kEnemyAnimMoveEpsilonWorld;
     const float anim_eps_sq = anim_eps * anim_eps;
 
@@ -345,58 +361,115 @@ void SfmlGameWindow::drawEnemies(const application::RenderSnapshot& snap) {
         const bool melee_pose = (e.sprite_id == kSpritePebblin && e.archetype == kArchetypeEliteHybrid &&
                                  manhattan <= snap.elite_melee_manhattan_tiles);
 
-        const EnemySheetConfig* cfg = enemy_visuals_.sheet_config(sid);
-        const sf::Texture* tex = enemy_visuals_.sheet_texture(sid);
-        if (!enemy_visuals_.sprite_ready(sid) || !cfg || !tex || cfg->idle.frames.empty() ||
-            cfg->move.frames.empty()) {
-            actor_circle_.setPosition(std::floor(px), std::floor(py));
-            actor_circle_.setFillColor(colorFromId(enemyArchetypeColorId(e.archetype)));
-            window_.draw(actor_circle_);
-        } else {
-            const SpriteLinearClip* clip = &cfg->move;
-            if (melee_pose && cfg->has_melee && !cfg->melee.frames.empty()) {
-                clip = &cfg->melee;
-            } else if (!moving) {
-                clip = &cfg->idle;
+        if (e.archetype == kArchetypeBoss && e.sprite_id == kSpriteBossCat && boss_cat_resources_.valid()) {
+            const double spec_t = enemy_species_anim_time_[static_cast<std::size_t>(kSpriteBossCat)];
+            const BossCatStrip* strip = &boss_cat_resources_.idle();
+            if (e.boss_hurt_active) {
+                strip = &boss_cat_resources_.hurt();
+            } else if (e.boss_cast_active) {
+                strip = &boss_cat_resources_.attack();
+            } else if (moving) {
+                strip = &boss_cat_resources_.run();
             }
-
-            const double spec_t = enemy_species_anim_time_[static_cast<std::size_t>(sid)];
-            const int fi = enemy_clip_frame_index(*clip, spec_t);
-            const sf::IntRect rect =
-                enemy_sheet_frame_rect(*cfg, *clip, fi, tex->getSize().x, tex->getSize().y);
-            if (rect.width <= 0 || rect.height <= 0) {
+            BossCatDraw bd{};
+            const bool face_left = e.world_x > snap.player_world_x;
+            if (computeBossCatStripDraw(*strip, spec_t, cell_px_, pr, boss_cat_resources_.scale_cells(), face_left,
+                                        bd)) {
+                enemy_draw_sprite_.setTexture(*bd.texture, true);
+                enemy_draw_sprite_.setTextureRect(bd.rect);
+                enemy_draw_sprite_.setScale(bd.scale_x, bd.scale_y);
+                enemy_draw_sprite_.setOrigin(bd.origin_x, bd.origin_y);
+                enemy_draw_sprite_.setPosition(std::floor(px), std::floor(py));
+                window_.draw(enemy_draw_sprite_);
+            } else {
+                actor_circle_.setPosition(std::floor(px), std::floor(py));
+                actor_circle_.setFillColor(colorFromId(enemyArchetypeColorId(e.archetype)));
+                window_.draw(actor_circle_);
+            }
+        } else {
+            const EnemySheetConfig* cfg = enemy_visuals_.sheet_config(sid);
+            const sf::Texture* tex = enemy_visuals_.sheet_texture(sid);
+            if (!enemy_visuals_.sprite_ready(sid) || !cfg || !tex || cfg->idle.frames.empty() ||
+                cfg->move.frames.empty()) {
                 actor_circle_.setPosition(std::floor(px), std::floor(py));
                 actor_circle_.setFillColor(colorFromId(enemyArchetypeColorId(e.archetype)));
                 window_.draw(actor_circle_);
             } else {
-                enemy_draw_sprite_.setTexture(*tex, true);
-                enemy_draw_sprite_.setTextureRect(rect);
-                const float frame_h = static_cast<float>(rect.height);
-                const float frame_w = static_cast<float>(rect.width);
-                const float scale_vs = cfg->scale_vs_disc;
-                const float scale = (scale_vs * 2.f * pr) / std::max(1.f, frame_h);
-                const bool flip = e.anim_vx < -anim_eps;
-                enemy_draw_sprite_.setScale(flip ? -scale : scale, scale);
-                enemy_draw_sprite_.setOrigin(std::floor(frame_w * 0.5f), frame_h);
-                enemy_draw_sprite_.setPosition(std::floor(px), std::floor(py));
-                window_.draw(enemy_draw_sprite_);
+                const SpriteLinearClip* clip = &cfg->move;
+                if (melee_pose && cfg->has_melee && !cfg->melee.frames.empty()) {
+                    clip = &cfg->melee;
+                } else if (!moving) {
+                    clip = &cfg->idle;
+                }
+
+                const std::size_t sp_idx = static_cast<std::size_t>(sid) < enemy_species_anim_time_.size()
+                                               ? static_cast<std::size_t>(sid)
+                                               : 0;
+                const double spec_t = enemy_species_anim_time_[sp_idx];
+                const int fi = enemy_clip_frame_index(*clip, spec_t);
+                const sf::IntRect rect =
+                    enemy_sheet_frame_rect(*cfg, *clip, fi, tex->getSize().x, tex->getSize().y);
+                if (rect.width <= 0 || rect.height <= 0) {
+                    actor_circle_.setPosition(std::floor(px), std::floor(py));
+                    actor_circle_.setFillColor(colorFromId(enemyArchetypeColorId(e.archetype)));
+                    window_.draw(actor_circle_);
+                } else {
+                    enemy_draw_sprite_.setTexture(*tex, true);
+                    enemy_draw_sprite_.setTextureRect(rect);
+                    const float frame_h = static_cast<float>(rect.height);
+                    const float frame_w = static_cast<float>(rect.width);
+                    const float scale_vs = cfg->scale_vs_disc;
+                    const float scale = (scale_vs * 2.f * pr) / std::max(1.f, frame_h);
+                    const bool flip = e.anim_vx < -anim_eps;
+                    enemy_draw_sprite_.setScale(flip ? -scale : scale, scale);
+                    enemy_draw_sprite_.setOrigin(std::floor(frame_w * 0.5f), frame_h);
+                    enemy_draw_sprite_.setPosition(std::floor(px), std::floor(py));
+                    window_.draw(enemy_draw_sprite_);
+                }
             }
         }
 
-        const float bar_w = pr * 2.4f;
-        const float bar_h = std::max(2.f, cell * 0.11f);
-        const float ratio =
-            static_cast<float>(e.hp) / static_cast<float>(std::max(1, e.hp_max));
+        if (e.archetype != kArchetypeBoss) {
+            const float bar_w = pr * 2.4f;
+            const float bar_h = std::max(2.f, cell * 0.11f);
+            const float ratio =
+                static_cast<float>(e.hp) / static_cast<float>(std::max(1, e.hp_max));
+            sf::RectangleShape hp_bg(sf::Vector2f(bar_w, bar_h));
+            hp_bg.setOrigin(bar_w * 0.5f, bar_h);
+            hp_bg.setPosition(std::floor(px), std::floor(py - pr - 2.f));
+            hp_bg.setFillColor(sf::Color(20, 24, 32, 220));
+            window_.draw(hp_bg);
+            sf::RectangleShape hp_fill(sf::Vector2f(std::max(1.f, bar_w * ratio), bar_h));
+            hp_fill.setOrigin(bar_w * 0.5f, bar_h);
+            hp_fill.setPosition(std::floor(px), std::floor(py - pr - 2.f));
+            hp_fill.setFillColor(colorFromId(42));
+            window_.draw(hp_fill);
+        }
+    }
+
+    const float win_w = static_cast<float>(logical_cols_ * cell_px_);
+    for (const auto& e : snap.enemies) {
+        if (e.archetype != kArchetypeBoss) {
+            continue;
+        }
+        constexpr float kBossTopBarWidthFrac = 0.58f;
+        constexpr float kBossTopBarMarginTop = 14.f;
+        const float bar_w = std::max(120.f, win_w * kBossTopBarWidthFrac);
+        const float bar_h = std::max(18.f, cell * 0.42f);
+        const float cx = win_w * 0.5f;
+        const float top_y = kBossTopBarMarginTop + bar_h * 0.5f;
+        const float ratio = static_cast<float>(e.hp) / static_cast<float>(std::max(1, e.hp_max));
         sf::RectangleShape hp_bg(sf::Vector2f(bar_w, bar_h));
-        hp_bg.setOrigin(bar_w * 0.5f, bar_h);
-        hp_bg.setPosition(std::floor(px), std::floor(py - pr - 2.f));
-        hp_bg.setFillColor(sf::Color(20, 24, 32, 220));
+        hp_bg.setOrigin(bar_w * 0.5f, bar_h * 0.5f);
+        hp_bg.setPosition(std::floor(cx), std::floor(top_y));
+        hp_bg.setFillColor(sf::Color(20, 24, 32, 235));
         window_.draw(hp_bg);
-        sf::RectangleShape hp_fill(sf::Vector2f(std::max(1.f, bar_w * ratio), bar_h));
-        hp_fill.setOrigin(bar_w * 0.5f, bar_h);
-        hp_fill.setPosition(std::floor(px), std::floor(py - pr - 2.f));
+        sf::RectangleShape hp_fill(sf::Vector2f(std::max(2.f, bar_w * ratio), bar_h));
+        hp_fill.setOrigin(bar_w * 0.5f, bar_h * 0.5f);
+        hp_fill.setPosition(std::floor(cx), std::floor(top_y));
         hp_fill.setFillColor(colorFromId(42));
         window_.draw(hp_fill);
+        break;
     }
 }
 
@@ -415,7 +488,8 @@ void SfmlGameWindow::drawPlayer(const application::RenderSnapshot& snap, double 
             player_sprite_.setTextureRect(r2.rect);
             player_sprite_.setScale(r2.scale_x, r2.scale_y);
             player_sprite_.setOrigin(r2.origin_x, r2.origin_y);
-            player_sprite_.setPosition(std::floor(px), std::floor(py + draw_dy));
+            const float role2_up = kRole2SpriteDrawUpCells * cell;
+            player_sprite_.setPosition(std::floor(px), std::floor(py + draw_dy - role2_up));
             window_.draw(player_sprite_);
         } else {
             player_sprite_.setTexture(player_texture_, false);
@@ -462,7 +536,8 @@ void SfmlGameWindow::drawBullets(const application::RenderSnapshot& snap) {
     const float base_thick = std::max(2.f, static_cast<float>(cell_px_) * 0.22f);
     bullet_shape_.setOrigin(0.f, 0.f);
 
-    for (const auto& b : snap.bullets) {
+    for (std::size_t bullet_i = 0; bullet_i < snap.bullets.size(); ++bullet_i) {
+        const auto& b = snap.bullets[bullet_i];
         const bool enemy = (b.faction == application::BulletFactionView::Enemy);
         const float len = enemy ? base_len * 1.15f : base_len;
         const float thick = enemy ? base_thick * 1.35f : base_thick;
@@ -486,12 +561,65 @@ void SfmlGameWindow::drawBullets(const application::RenderSnapshot& snap) {
             }
         }
 
-        if (!enemy && b.player_bullet_visual == 1 && player_book_bullet_ready_) {
+        if (enemy && b.enemy_bullet_sprite == kEnemyBulletViewBossBullet &&
+            boss_bullet_frames_.strip_ready(b.enemy_bullet_strip)) {
+            const int fc = boss_bullet_frames_.frame_count(b.enemy_bullet_strip);
+            if (fc > 0) {
+                const int base_frame = static_cast<int>(std::floor(book_strip_anim_sec_ * 10.0));
+                const int fi = (base_frame + static_cast<int>(bullet_i)) % fc;
+                const sf::Texture* btex = boss_bullet_frames_.frame(b.enemy_bullet_strip, fi);
+                if (btex && btex->getSize().y > 0u) {
+                    enemy_draw_sprite_.setTexture(*btex, true);
+                    enemy_draw_sprite_.setTextureRect(
+                        sf::IntRect(0, 0, static_cast<int>(btex->getSize().x), static_cast<int>(btex->getSize().y)));
+                    const float tw = static_cast<float>(btex->getSize().x);
+                    const float th = static_cast<float>(btex->getSize().y);
+                    const float target = thick * 3.2f;
+                    const float sc = target / th;
+                    enemy_draw_sprite_.setScale(sc, sc);
+                    enemy_draw_sprite_.setOrigin(tw * 0.5f, th * 0.5f);
+                    enemy_draw_sprite_.setPosition(std::floor(px), std::floor(py));
+                    enemy_draw_sprite_.setRotation(b.rotation_deg);
+                    window_.draw(enemy_draw_sprite_);
+                    continue;
+                }
+            }
+        }
+
+        if (!enemy && b.player_bullet_visual == kPlayerBulletViewRole1Red && player_role1_bullet_ready_) {
+            const auto tsz = player_role1_bullet_tex_.getSize();
+            if (tsz.x > 0u && tsz.y > 0u) {
+                enemy_draw_sprite_.setTexture(player_role1_bullet_tex_, true);
+                enemy_draw_sprite_.setTextureRect(
+                    sf::IntRect(0, 0, static_cast<int>(tsz.x), static_cast<int>(tsz.y)));
+                const float tw = static_cast<float>(tsz.x);
+                const float th = static_cast<float>(tsz.y);
+                const float target = thick * 3.2f;
+                const float sc = target / th;
+                enemy_draw_sprite_.setScale(sc, sc);
+                enemy_draw_sprite_.setOrigin(tw * 0.5f, th * 0.5f);
+                enemy_draw_sprite_.setPosition(std::floor(px), std::floor(py));
+                enemy_draw_sprite_.setRotation(b.rotation_deg);
+                window_.draw(enemy_draw_sprite_);
+                continue;
+            }
+        }
+
+        if (!enemy && b.player_bullet_visual == kPlayerBulletViewRole2Book && player_book_bullet_ready_) {
             const auto bsz = player_book_bullet_tex_.getSize();
-            if (bsz.y > 0u) {
+            const int cols = kBookBulletStripColumns;
+            const int rows = kBookBulletStripRows;
+            if (bsz.y > 0u && cols > 0 && rows > 0 && bsz.x >= static_cast<unsigned>(cols) &&
+                bsz.y >= static_cast<unsigned>(rows) && (bsz.x % static_cast<unsigned>(cols)) == 0u &&
+                (bsz.y % static_cast<unsigned>(rows)) == 0u) {
+                const int fw = static_cast<int>(bsz.x / static_cast<unsigned>(cols));
+                const int fh = static_cast<int>(bsz.y / static_cast<unsigned>(rows));
+                const int anim = static_cast<int>(std::floor(book_strip_anim_sec_ * 10.0)) % cols;
+                const int col = (static_cast<int>(b.player_book_subframe) + anim) % cols;
                 enemy_draw_sprite_.setTexture(player_book_bullet_tex_, true);
-                const float tw = static_cast<float>(bsz.x);
-                const float th = static_cast<float>(bsz.y);
+                enemy_draw_sprite_.setTextureRect(sf::IntRect(col * fw, 0, fw, fh));
+                const float tw = static_cast<float>(fw);
+                const float th = static_cast<float>(fh);
                 const float target = thick * 3.2f;
                 const float sc = target / th;
                 enemy_draw_sprite_.setScale(sc, sc);
@@ -731,6 +859,7 @@ void SfmlGameWindow::present(int rows, int cols, const std::vector<domain::Frame
     for (double& t : enemy_species_anim_time_) {
         t += dt;
     }
+    book_strip_anim_sec_ += dt;
 
     drawEnemies(snap);
     drawBullets(snap);

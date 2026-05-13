@@ -1,5 +1,5 @@
 {
-  "texture": "assets/sprites/role1.png",
+  "texture": "assets/sprites/role/role1/role1.png",
   "columns": 10,
   "rows": 9,
   "scale_cells": 1.5,

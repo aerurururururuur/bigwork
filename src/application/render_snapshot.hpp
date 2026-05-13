@@ -17,6 +17,9 @@ enum class CombatVfxKindView : std::uint8_t { EnemyDied = 0, PlayerHitByBullet =
 
 enum class OverlayPlacement : std::uint8_t { Centered = 0, BottomBar = 1 };
 
+/** Title flow: main menu vs character picker (only when `title_screen` is true). */
+enum class TitleUiPhaseView : std::uint8_t { MainMenu = 0, CharacterSelect = 1 };
+
 struct OverlayModel {
     bool active{false};
     std::vector<std::string> lines;
@@ -42,6 +45,10 @@ struct EnemyView {
     float anim_vy{0.f};
     int hp{0};
     int hp_max{1};
+    /** Boss-only: hurt strip when true. */
+    bool boss_hurt_active{false};
+    /** Boss-only: shooting/cast strip when true. */
+    bool boss_cast_active{false};
 };
 
 struct BulletView {
@@ -55,8 +62,12 @@ struct BulletView {
     BulletFactionView faction{BulletFactionView::Player};
     /** Domain `EnemyBulletSprite` when `faction == Enemy`; else 0. */
     std::uint8_t enemy_bullet_sprite{0};
-    /** Role2 book bullet etc.; 0 = default player bullet rect. */
+    /** Valid when `enemy_bullet_sprite == 2` (BossBullet): strip `0..5` maps to `boss/{1..6}/`. */
+    std::uint8_t enemy_bullet_strip{0};
+    /** 0 = fallback rect; 1 = Role2 book strip; 2 = Role1 `red.png` bullet. */
     std::uint8_t player_bullet_visual{0};
+    /** Sub-frame index for book strip when `player_bullet_visual == 1`. */
+    std::uint8_t player_book_subframe{0};
 };
 
 struct CombatVfxEventView {
@@ -129,6 +140,12 @@ struct RenderSnapshot {
     bool gameplay_active{false};
     /** True when horizontal speed magnitude exceeds epsilon (for foot dust). */
     bool player_emit_dust{false};
+
+    /** True when `GameState::Title` (for title-only input such as arrow menu nav). */
+    bool title_screen{false};
+    TitleUiPhaseView title_phase{TitleUiPhaseView::MainMenu};
+    std::uint8_t title_main_index{0};
+    std::uint8_t title_char_index{0};
 };
 
 } // namespace application

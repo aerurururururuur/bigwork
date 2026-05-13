@@ -67,6 +67,7 @@ background_image=assets/your_background.png
 - Boss 前共 **3** 波杂兵（可调 `src/domain/wave_combat_tuning.hpp` 中 `kMobWavesBeforeBoss`）；每波生成数量随波次略增（有上限），清光非 Boss 敌人后进入 **约 2 秒** 休整，再随机散布障碍并刷新下一波。
 - **胜利**：仅当 **Boss 已生成**（`boss_released` 语义）且场上 **无任何存活敌人** 时判定；波间场上暂时无人 **不会** 判胜。
 - **玩家子弹最大飞行距离**：杂兵阶段较短，Boss 登场后自动切换为远距离档；普攻与 **Q 环形齐射** 共用 `World::spawnPlayerBullet`。具体世界单位见 `kPlayerMobBulletTravelWorld` / `kPlayerBossBulletTravelWorld`。
+- **杂兵远程 / 精英远程弹**：最大飞行距离与杂兵阶段主角子弹相同（`kPlayerMobBulletTravelWorld`）；Boss 本体弹幕仍不限该距离。
 - 杂兵与远程弹的 **血量、射速、移速、敌弹伤害** 等压迫向数值亦集中在 `wave_combat_tuning.hpp`，便于答辩时统一说明「难度表」。
 - **可选扩展**：波次开始/ Boss 现身的短音效、对 `sf::View` 的轻微镜头抖动未默认接入，可在 `GameApplication` 或 `SfmlGameWindow` 层按快照字段自行挂接。
 
@@ -107,9 +108,9 @@ Boss AI（`domain/enemy_behavior.cpp` 中 `BossHybridBehavior`）按 **当前 HP
 
 ## 操作
 
-- **Enter** 或 **点击标题中的 Start 按钮**：开始战斗。
-- **WASD**：移动；战斗中 **鼠标指向** 决定射击方向（360°）；**Space** 或 **按住鼠标左键**：开火。**Q**：全周环射；**E**：窄扇形副武器（有 MP 与冷却）。
-- **Tab**：战斗中在 **Role1 / Role2** 主角外观间切换（每次 **新开局** 重置为 Role1）；Role2 时玩家子弹为书本贴图（`assets/sprites/bullets/Book.png`）；条带资源见 `assets/sprites/player_sheet_role2.json`。
+- **标题**：**↑ / ↓（方向键）** 在菜单项间移动；**Enter** 确认。主菜单为 **开始游戏** 与 **切换角色**；在「切换角色」上确认后进入 **选角**（Role1 / Role2），再 **Enter** 保存并回到主菜单；在「开始游戏」上 **Enter** 才进入战斗。返回标题（胜/败后）菜单会回到主界面第一项，**上次在标题选中的角色会保留**（新开局不再强制重置为 Role1）。
+- **WASD**：战斗中移动；战斗中 **鼠标指向** 决定射击方向（360°）；**Space** 或 **按住鼠标左键**：普攻（不耗 MP，受射速冷却）；**Q**：全周环射；**E**：窄扇形副武器（有 MP 与冷却）。MP 随时间缓慢自然回复。
+- **Tab**：战斗中在 **Role1 / Role2** 主角外观间快捷切换（调试/体验用）；**正式选角在标题界面「切换角色」中完成**。Role2 时玩家子弹为书本贴图条带（`assets/sprites/bullets/Book.png`，按列拆帧绘制）；Role1 单图集见 `assets/sprites/player_sheet.json`（纹理路径指向 `assets/sprites/role/role1/`），Role2 多条纹见 `assets/sprites/player_sheet_role2.json`（纹理在 `assets/sprites/role/role2/`）。
 - **T**：主题配色切换。
 - **Esc** 或关闭窗口：退出。
 

@@ -41,6 +41,10 @@ private:
     std::deque<std::vector<std::string>> dialog_queue_{};
     bool had_living_boss_{false};
     bool boss_intro_dialog_fired_{false};
+
+    TitleUiPhaseView title_ui_phase_{TitleUiPhaseView::MainMenu};
+    int title_main_index_{0};
+    int title_char_index_{0};
 };
 
 } // namespace application

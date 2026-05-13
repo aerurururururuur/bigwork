@@ -14,10 +14,25 @@ inline constexpr int kScreenPixelsPerLogicalCell = 10;
 inline constexpr float kPlayerSpriteDrawDownCells = 1.75f;
 
 /**
+ * Role2 only: nudge sprite **up** in logical cells (subtract from draw Y).
+ * Feet anchor in Domain unchanged; visual-only.
+ */
+inline constexpr float kRole2SpriteDrawUpCells = 0.50f;
+
+/**
  * Sky-only: each logical sky cell is drawn as kSkyMicroCellsPerAxis x kSkyMicroCellsPerAxis
  * micro-squares for finer gradients. Requires (cell_px % kSkyMicroCellsPerAxis == 0).
  */
 inline constexpr int kSkyMicroCellsPerAxis = 2;
+
+/** Snapshot `BulletView::player_bullet_visual` for Role2 book strip. */
+inline constexpr std::uint8_t kPlayerBulletViewRole2Book = 1;
+/** Role1 bullet uses `assets/sprites/bullets/red.png`. */
+inline constexpr std::uint8_t kPlayerBulletViewRole1Red = 2;
+
+/** `Book.png` strip layout (Role2 book bullet); texture width must divide by columns. */
+inline constexpr int kBookBulletStripColumns = 10;
+inline constexpr int kBookBulletStripRows = 1;
 
 /** Max simultaneous foot-dust particles (visual only). */
 inline constexpr int kMovementParticleCap = 256;
@@ -32,5 +47,7 @@ inline constexpr float kEnemyAnimMoveEpsilonWorld = 0.02f;
 
 /** Snapshot `BulletView::enemy_bullet_sprite` when drawing Pebblin rock (see `domain::EnemyBulletSprite`). */
 inline constexpr std::uint8_t kEnemyBulletViewPebblinRock = 1;
+/** Boss multi-folder bullet frames (`assets/sprites/bullets/boss/1..6`). */
+inline constexpr std::uint8_t kEnemyBulletViewBossBullet = 2;
 
 } // namespace representation

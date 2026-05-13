@@ -1,8 +1,10 @@
 #include "domain/skill.hpp"
 
+#include "domain/boss_bullet_strip.hpp"
 #include "domain/boss_pattern_spawn.hpp"
 #include "domain/combat_entities.hpp"
 #include "domain/enemy_bullet_sprite.hpp"
+#include "domain/enemy_sprite_id.hpp"
 #include "domain/vec2.hpp"
 #include "domain/wave_combat_tuning.hpp"
 #include "domain/world.hpp"
@@ -40,7 +42,7 @@ constexpr float kBossSpiralRadiusEnd = 2.8f;
 constexpr float kBossSpiralTangentSpeed = 8.0f;
 
 /** Dual fan: bullets per side, half-angle (rad). */
-constexpr int kBossDualFanCountPerSide = 14;
+constexpr int kBossDualFanCountPerSide = 9;
 constexpr float kBossDualFanHalfWidthRad = 3.14159265358979323846f / 7.f;
 
 /** Cross rings. */
@@ -64,14 +66,15 @@ constexpr float kBossWallVolleyInset = 0.55f;
 constexpr float kBossWallVolleyYMargin = 1.15f;
 
 void spawnEnemyDiffusionRing(World& world, float cx, float cy, int n, float angle_offset_rad, float speed,
-                             float muzzle, int damage, EnemyBulletSprite sprite) {
+                             float muzzle, int damage, EnemyBulletSprite sprite, std::uint8_t boss_bullet_strip) {
     for (int i = 0; i < n; ++i) {
         const float a =
             angle_offset_rad + (6.2831853071795864769f * static_cast<float>(i)) / static_cast<float>(n);
         float bx = std::cos(a);
         float by = std::sin(a);
         normalizeOrDefault(bx, by);
-        world.spawnEnemyBullet(cx + bx * muzzle, cy + by * muzzle, bx * speed, by * speed, damage, sprite);
+        world.spawnEnemyBullet(cx + bx * muzzle, cy + by * muzzle, bx * speed, by * speed, damage, sprite,
+                               boss_bullet_strip);
     }
 }
 
@@ -175,7 +178,8 @@ void bossDiffusionFireRing1(SkillCastContext& ctx) {
     const float cx = ctx.enemy->x();
     const float cy = ctx.enemy->y();
     spawnEnemyDiffusionRing(ctx.world, cx, cy, kBossDiffusionRing1Count, 0.f, kEnemyRingBulletSpeed,
-                            kEnemyRingMuzzleOffset, ctx.enemy_bullet_damage, EnemyBulletSprite::PebblinRock);
+                            kEnemyRingMuzzleOffset, ctx.enemy_bullet_damage, EnemyBulletSprite::BossBullet,
+                            kBossBulletStripRing1);
 }
 
 void bossDiffusionFireRing2(SkillCastContext& ctx) {
@@ -186,7 +190,7 @@ void bossDiffusionFireRing2(SkillCastContext& ctx) {
     const float cy = ctx.enemy->y();
     spawnEnemyDiffusionRing(ctx.world, cx, cy, kBossDiffusionRing2Count, kBossDiffusionRing2AngleOffset,
                             kEnemyRingBulletSpeed, kEnemyRingMuzzleOffset, ctx.enemy_bullet_damage,
-                            EnemyBulletSprite::PebblinRock);
+                            EnemyBulletSprite::BossBullet, kBossBulletStripRing2);
 }
 
 void bossFanBarrageFire(SkillCastContext& ctx) {
@@ -203,9 +207,10 @@ void bossFanBarrageFire(SkillCastContext& ctx) {
     if (lengthSq(dx, dy) > kEpsilon * kEpsilon) {
         theta = std::atan2(dy, dx);
     }
-    const int n = ctx.world.random().uniformInt(20, 28);
+    const int n = ctx.world.random().uniformInt(13, 18);
     boss_pattern_spawn_fan_sector(ctx.world, ex, ey, theta, kBossFanHalfWidthRad, n, kBossFanBulletSpeed,
-                                  kEnemyRingMuzzleOffset, ctx.enemy_bullet_damage, EnemyBulletSprite::PebblinRock);
+                                  kEnemyRingMuzzleOffset, ctx.enemy_bullet_damage, EnemyBulletSprite::BossBullet,
+                                  kBossBulletStripFan);
 }
 
 void bossSpiralBurstFire(SkillCastContext& ctx) {
@@ -217,7 +222,8 @@ void bossSpiralBurstFire(SkillCastContext& ctx) {
     const bool clockwise = (ctx.world.random().uniformInt(0, 1) != 0);
     boss_pattern_spawn_spiral_snapshot(ctx.world, cx, cy, kBossSpiralBulletCount, kBossSpiralTurns,
                                        kBossSpiralRadiusStart, kBossSpiralRadiusEnd, kBossSpiralTangentSpeed,
-                                       ctx.enemy_bullet_damage, EnemyBulletSprite::PebblinRock, clockwise);
+                                       ctx.enemy_bullet_damage, EnemyBulletSprite::BossBullet, clockwise,
+                                       kBossBulletStripSpiral);
 }
 
 void bossDualOpposingFanFire(SkillCastContext& ctx) {
@@ -230,7 +236,8 @@ void bossDualOpposingFanFire(SkillCastContext& ctx) {
     const float py = ctx.world.player().y();
     boss_pattern_spawn_dual_opposing_fans(ctx.world, cx, cy, px, py, kBossDualFanCountPerSide,
                                           kBossDualFanHalfWidthRad, kBossFanBulletSpeed, kEnemyRingMuzzleOffset,
-                                          ctx.enemy_bullet_damage, EnemyBulletSprite::PebblinRock);
+                                          ctx.enemy_bullet_damage, EnemyBulletSprite::BossBullet,
+                                          kBossBulletStripDualFan);
 }
 
 void bossCrossDualRingFire(SkillCastContext& ctx) {
@@ -242,7 +249,7 @@ void bossCrossDualRingFire(SkillCastContext& ctx) {
     boss_pattern_spawn_cross_dual_ring(ctx.world, cx, cy, kBossCrossRingOuter, kBossCrossRingInner,
                                        kBossCrossRingOuterCount, kBossCrossRingInnerCount, kEnemyRingBulletSpeed,
                                        kBossFanBulletSpeed, kEnemyRingMuzzleOffset, ctx.enemy_bullet_damage,
-                                       EnemyBulletSprite::PebblinRock);
+                                       EnemyBulletSprite::BossBullet, kBossBulletStripHeavy);
 }
 
 void bossSoftScatterFire(SkillCastContext& ctx) {
@@ -262,7 +269,7 @@ void bossSoftScatterFire(SkillCastContext& ctx) {
     const int n = ctx.world.random().uniformInt(kBossSoftScatterCountMin, kBossSoftScatterCountMax);
     boss_pattern_spawn_soft_scatter(ctx.world, cx, cy, aim, n, kBossSoftScatterSpreadHalfRad, kBossSoftScatterSpeed,
                                     kBossSoftScatterStraightSec, kBossSoftScatterMaxTurnRps, kEnemyRingMuzzleOffset,
-                                    ctx.enemy_bullet_damage);
+                                    ctx.enemy_bullet_damage, EnemyBulletSprite::BossBullet, kBossBulletStripHeavy);
 }
 
 void bossSideWallVolleyFire(SkillCastContext& ctx) {
@@ -271,11 +278,13 @@ void bossSideWallVolleyFire(SkillCastContext& ctx) {
     }
     const float px = ctx.world.player().x();
     const float bx = ctx.enemy->x();
-    const EnemyBulletSprite sprite = ctx.enemy->spriteId() == EnemySpriteId::Pebblin ? EnemyBulletSprite::PebblinRock
-                                                                                     : EnemyBulletSprite::Generic;
+    const bool pebblin_wall = ctx.enemy->spriteId() == EnemySpriteId::Pebblin;
+    const EnemyBulletSprite sprite =
+        pebblin_wall ? EnemyBulletSprite::PebblinRock : EnemyBulletSprite::BossBullet;
+    const std::uint8_t strip = pebblin_wall ? 0u : kBossBulletStripHeavy;
     boss_pattern_spawn_wall_volley(ctx.world, px, bx, ctx.world.playfield().width(), ctx.world.playfield().height(),
                                    kBossWallVolleyBulletCount, kBossWallVolleySpeed, kBossWallVolleyInset,
-                                   kBossWallVolleyYMargin, ctx.enemy_bullet_damage, sprite);
+                                   kBossWallVolleyYMargin, ctx.enemy_bullet_damage, sprite, strip);
 }
 
 } // namespace domain

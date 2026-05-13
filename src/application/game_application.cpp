@@ -141,20 +141,60 @@ void GameApplication::tick(double dt, const std::vector<GameCommand>& commands,
 
     dialog_blocking = state_ == GameState::Battle && !dialog_queue_.empty();
     if (!dialog_blocking) {
-        for (GameCommand cmd : commands) {
-            if (cmd != GameCommand::Confirm) {
-                continue;
+        if (state_ == GameState::Title) {
+            if (raw.title_menu_nav_up) {
+                if (title_ui_phase_ == TitleUiPhaseView::CharacterSelect) {
+                    title_char_index_ = (title_char_index_ <= 0) ? 0 : title_char_index_ - 1;
+                } else {
+                    title_main_index_ = (title_main_index_ <= 0) ? 0 : title_main_index_ - 1;
+                }
             }
-            if (state_ == GameState::Title) {
-                world_->resetBattle();
-                dialog_queue_.clear();
-                had_living_boss_ = false;
-                boss_intro_dialog_fired_ = false;
-                state_ = GameState::Battle;
-                audit_->write("STATE", "Enter battle.");
-            } else if (state_ == GameState::Victory || state_ == GameState::Defeat) {
-                state_ = GameState::Title;
-                audit_->write("STATE", "Return to title.");
+            if (raw.title_menu_nav_down) {
+                if (title_ui_phase_ == TitleUiPhaseView::CharacterSelect) {
+                    title_char_index_ = (title_char_index_ >= 1) ? 1 : title_char_index_ + 1;
+                } else {
+                    title_main_index_ = (title_main_index_ >= 1) ? 1 : title_main_index_ + 1;
+                }
+            }
+            bool pressed_confirm = raw.confirm;
+            if (!pressed_confirm) {
+                for (GameCommand c : commands) {
+                    if (c == GameCommand::Confirm) {
+                        pressed_confirm = true;
+                        break;
+                    }
+                }
+            }
+            if (pressed_confirm) {
+                if (title_ui_phase_ == TitleUiPhaseView::CharacterSelect) {
+                    world_->setPlayerCharacter(title_char_index_ == 0 ? domain::PlayerCharacterId::Role1
+                                                                      : domain::PlayerCharacterId::Role2);
+                    title_ui_phase_ = TitleUiPhaseView::MainMenu;
+                    audit_->write("STATE", "Title character selected.");
+                } else if (title_main_index_ == 1) {
+                    title_ui_phase_ = TitleUiPhaseView::CharacterSelect;
+                    title_char_index_ =
+                        (world_->player().characterId() == domain::PlayerCharacterId::Role2) ? 1 : 0;
+                } else {
+                    world_->resetBattle();
+                    dialog_queue_.clear();
+                    had_living_boss_ = false;
+                    boss_intro_dialog_fired_ = false;
+                    state_ = GameState::Battle;
+                    audit_->write("STATE", "Enter battle.");
+                }
+            }
+        } else {
+            for (GameCommand cmd : commands) {
+                if (cmd != GameCommand::Confirm) {
+                    continue;
+                }
+                if (state_ == GameState::Victory || state_ == GameState::Defeat) {
+                    state_ = GameState::Title;
+                    title_ui_phase_ = TitleUiPhaseView::MainMenu;
+                    title_main_index_ = 0;
+                    audit_->write("STATE", "Return to title.");
+                }
             }
         }
     }
@@ -237,7 +277,7 @@ void GameApplication::tick(double dt, const std::vector<GameCommand>& commands,
         } else {
             const bool has_boss = worldHasLivingBoss(*world_);
             if (!had_living_boss_ && has_boss && !boss_intro_dialog_fired_) {
-                enqueueDialog(std::vector<std::string>{"......?"});
+                enqueueDialog(std::vector<std::string>{"喵喵喵？"});
                 boss_intro_dialog_fired_ = true;
                 audit_->write("DIALOG", "boss intro queued");
             }
@@ -298,10 +338,15 @@ RenderSnapshot GameApplication::buildSnapshot() {
         v.anim_vy = e->lastAnimVy();
         v.hp = e->hp();
         v.hp_max = std::max(1, e->maxHp());
+        if (e->archetype() == domain::EnemyArchetype::Boss) {
+            v.boss_hurt_active = e->bossHurtAnimRem() > 0.0;
+            v.boss_cast_active = e->bossCastAnimRem() > 0.0;
+        }
         s.enemies.push_back(v);
     }
 
     s.bullets.clear();
+    int book_bullet_seq = 0;
     for (const auto& b : world_->bullets()) {
         if (!b || b->destroyed()) {
             continue;
@@ -317,7 +362,12 @@ RenderSnapshot GameApplication::buildSnapshot() {
         bv.faction = (b->faction() == domain::BulletFaction::Enemy) ? BulletFactionView::Enemy
                                                                       : BulletFactionView::Player;
         bv.enemy_bullet_sprite = b->enemyBulletVisual();
+        bv.enemy_bullet_strip = b->enemyBulletStrip();
         bv.player_bullet_visual = b->playerBulletVisual();
+        if (bv.player_bullet_visual == 1) {
+            bv.player_book_subframe = static_cast<std::uint8_t>(book_bullet_seq % 10);
+            ++book_bullet_seq;
+        }
         s.bullets.push_back(bv);
     }
 
@@ -360,7 +410,15 @@ RenderSnapshot GameApplication::buildSnapshot() {
     }
 
     if (state_ == GameState::Title) {
-        prepareTitleOverlay(s.overlay, s.total_cols, s.total_rows);
+        s.title_screen = true;
+        s.title_phase = title_ui_phase_;
+        s.title_main_index = static_cast<std::uint8_t>(title_main_index_);
+        s.title_char_index = static_cast<std::uint8_t>(title_char_index_);
+        if (title_ui_phase_ == TitleUiPhaseView::CharacterSelect) {
+            prepareTitleCharacterSelectOverlay(s.overlay, s.total_cols, s.total_rows, title_char_index_);
+        } else {
+            prepareTitleMainMenuOverlay(s.overlay, s.total_cols, s.total_rows, title_main_index_);
+        }
     } else if (state_ == GameState::Victory || state_ == GameState::Defeat) {
         prepareBattleEndOverlay(s.overlay, s.total_cols, s.total_rows, state_ == GameState::Victory);
     } else if (state_ == GameState::Battle && !dialog_queue_.empty()) {

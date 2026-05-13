@@ -74,9 +74,11 @@ public:
             normalizeOrDefault(bx, by);
             const float ox = self.x() + bx * kMuzzleOffset;
             const float oy = self.y() + by * kMuzzleOffset;
+            const float rm = wave_combat::kPlayerMobBulletTravelWorld;
+            const float mob_max_sq = rm > 0.f ? rm * rm : -1.f;
             ports.fire->spawnEnemyBullet(ox, oy, bx * wave_combat::kEnemyMobBulletSpeed,
                                          by * wave_combat::kEnemyMobBulletSpeed, wave_combat::kEnemyMobBulletDamage,
-                                         pickEnemyBulletSprite(self));
+                                         pickEnemyBulletSprite(self), 0, mob_max_sq);
             self.armEnemyFireCooldown();
         }
     }
@@ -116,9 +118,11 @@ public:
             normalizeOrDefault(bx, by);
             const float ox = self.x() + bx * kMuzzleOffset;
             const float oy = self.y() + by * kMuzzleOffset;
+            const float rm = wave_combat::kPlayerMobBulletTravelWorld;
+            const float mob_max_sq = rm > 0.f ? rm * rm : -1.f;
             ports.fire->spawnEnemyBullet(ox, oy, bx * wave_combat::kEnemyMobBulletSpeed,
                                          by * wave_combat::kEnemyMobBulletSpeed, wave_combat::kEnemyMobBulletDamage,
-                                         pickEnemyBulletSprite(self));
+                                         pickEnemyBulletSprite(self), 0, mob_max_sq);
             self.armEnemyFireCooldown();
         }
     }
@@ -152,12 +156,10 @@ class BossHybridBehavior final : public IEnemyBehavior {
     bool was_early_hp_band_{true};
 
     static void armNextRingBurst(World& world, double& rem_out) {
-        constexpr double kBaseSec = 5.0;
-        constexpr double kMinSec = 2.5;
-        const double jitter_ms = static_cast<double>(world.random().uniformInt(-400, 400)) / 1000.0;
-        rem_out = kBaseSec + jitter_ms;
-        if (rem_out < kMinSec) {
-            rem_out = kMinSec;
+        const double jitter_ms = static_cast<double>(world.random().uniformInt(-250, 250)) / 1000.0;
+        rem_out = kBossEarlyRingBurstBaseSec + jitter_ms;
+        if (rem_out < kBossEarlyRingBurstMinSec) {
+            rem_out = kBossEarlyRingBurstMinSec;
         }
     }
 
@@ -173,8 +175,9 @@ class BossHybridBehavior final : public IEnemyBehavior {
                 if (diffusion_rem_ <= 0.0) {
                     SkillCastContext ctx{world, SkillCasterKind::Boss, nullptr, &self, 0.f, 0.f, 0, 1};
                     bossDiffusionFireRing1(ctx);
+                    self.armBossCastVisual(0.55);
                     diffusion_ = DiffusionPhase::WaitRing2;
-                    diffusion_rem_ = 0.5;
+                    diffusion_rem_ = kBossEarlyRing1ToRing2DelaySec;
                 }
                 return;
             }
@@ -182,6 +185,7 @@ class BossHybridBehavior final : public IEnemyBehavior {
                 if (diffusion_rem_ <= 0.0) {
                     SkillCastContext ctx{world, SkillCasterKind::Boss, nullptr, &self, 0.f, 0.f, 0, 1};
                     bossDiffusionFireRing2(ctx);
+                    self.armBossCastVisual(0.55);
                     diffusion_ = DiffusionPhase::None;
                     armNextRingBurst(world, ring_burst_rem_);
                     next_attack_is_fan_ = true;
@@ -198,11 +202,13 @@ class BossHybridBehavior final : public IEnemyBehavior {
             if (next_attack_is_fan_) {
                 SkillCastContext ctx{world, SkillCasterKind::Boss, nullptr, &self, 0.f, 0.f, 0, 1};
                 bossFanBarrageFire(ctx);
+                self.armBossCastVisual(0.55);
                 armNextRingBurst(world, ring_burst_rem_);
                 next_attack_is_fan_ = false;
             } else {
                 diffusion_ = DiffusionPhase::Windup;
-                diffusion_rem_ = 1.0;
+                diffusion_rem_ = kBossEarlyDiffusionWindupSec;
+                self.armBossCastVisual(static_cast<double>(kBossEarlyDiffusionWindupSec));
             }
         }
     }
@@ -215,6 +221,7 @@ class BossHybridBehavior final : public IEnemyBehavior {
             spell_rem_ -= dt;
             if (spell_rem_ <= 0.0) {
                 bossDiffusionFireRing1(ctx);
+                self.armBossCastVisual(0.55);
                 spell_ = SpellCardPhase::R1WaitAfterRing1;
                 spell_rem_ = kBossSpellRing2DelaySec;
             }
@@ -223,6 +230,7 @@ class BossHybridBehavior final : public IEnemyBehavior {
             spell_rem_ -= dt;
             if (spell_rem_ <= 0.0) {
                 bossDiffusionFireRing2(ctx);
+                self.armBossCastVisual(0.55);
                 spell_ = SpellCardPhase::PauseAfterRound1;
                 spell_rem_ = kBossSpellPauseShortSec;
             }
@@ -231,6 +239,7 @@ class BossHybridBehavior final : public IEnemyBehavior {
             spell_rem_ -= dt;
             if (spell_rem_ <= 0.0) {
                 bossDualOpposingFanFire(ctx);
+                self.armBossCastVisual(0.55);
                 spell_ = SpellCardPhase::PauseAfterRound2;
                 spell_rem_ = kBossSpellPauseShortSec;
             }
@@ -239,6 +248,7 @@ class BossHybridBehavior final : public IEnemyBehavior {
             spell_rem_ -= dt;
             if (spell_rem_ <= 0.0) {
                 bossSoftScatterFire(ctx);
+                self.armBossCastVisual(0.55);
                 spell_ = SpellCardPhase::PauseAfterScatter;
                 spell_rem_ = kBossSpellPauseShortSec;
             }
@@ -250,6 +260,7 @@ class BossHybridBehavior final : public IEnemyBehavior {
             }
             break;
         case SpellCardPhase::Round3CrossRings:
+            self.armBossCastVisual(0.85);
             bossCrossDualRingFire(ctx);
             spell_ = SpellCardPhase::Vulnerable;
             spell_rem_ = kBossSpellVulnerableSec;
@@ -304,6 +315,7 @@ public:
         if (ring_burst_rem_ <= 0.0 && ports.fire) {
             spell_ = SpellCardPhase::SpellWindup;
             spell_rem_ = kBossSpellWindupSec;
+            self.armBossCastVisual(kBossSpellWindupSec);
         }
     }
 };

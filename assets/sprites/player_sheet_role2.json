@@ -1,9 +1,9 @@
 {
-  "scale_cells": 1.5,
+  "scale_cells": 1.0,
   "clips": {
-    "idle": { "texture": "assets/sprites/role2/Idle.png", "columns": 9, "rows": 1, "fps": 10 },
-    "run": { "texture": "assets/sprites/role2/Walk.png", "columns": 12, "rows": 1, "fps": 12 },
-    "attack": { "texture": "assets/sprites/role2/Attack.png", "columns": 8, "rows": 1, "fps": 14 },
-    "death": { "texture": "assets/sprites/role2/Dead.png", "columns": 4, "rows": 1, "fps": 10, "loop": false }
+    "idle": { "texture": "assets/sprites/role/role2/Idle.png", "columns": 9, "rows": 1, "fps": 10 },
+    "run": { "texture": "assets/sprites/role/role2/Walk.png", "columns": 12, "rows": 1, "fps": 12 },
+    "attack": { "texture": "assets/sprites/role/role2/Attack.png", "columns": 8, "rows": 1, "fps": 14 },
+    "death": { "texture": "assets/sprites/role/role2/Dead.png", "columns": 4, "rows": 1, "fps": 10, "loop": false }
   }
 }

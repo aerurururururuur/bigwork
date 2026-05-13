@@ -14,13 +14,14 @@ inline constexpr int kScatterObstacleBase = 9;
 inline constexpr int kScatterObstacleExtraRoll = 5;
 
 inline constexpr float kPlayerMobBulletTravelWorld = 4.5f;
+/** Player bullets after Boss spawns; mob-ranged enemy bullets use `kPlayerMobBulletTravelWorld` max range too. */
 inline constexpr float kPlayerBossBulletTravelWorld = 28.f;
 
 // Enemy HP / fire cadence (global slight bump vs old baseline).
 inline constexpr int kMobMeleeHp = 6;
 inline constexpr int kMobRangedHp = 5;
 inline constexpr int kMobEliteHp = 12;
-inline constexpr int kMobBossHp = 40;
+inline constexpr int kMobBossHp = 220;
 inline constexpr double kMobMeleeFirePeriod = 0.95;
 inline constexpr double kMobRangedFirePeriod = 0.70;
 inline constexpr double kMobEliteFirePeriod = 0.48;

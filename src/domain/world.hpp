@@ -61,12 +61,15 @@ public:
                            std::uint8_t player_bullet_visual = 0) override;
 
     void cyclePlayerCharacter();
+    void setPlayerCharacter(PlayerCharacterId id);
     void spawnEnemyBullet(float x, float y, float vx, float vy, int damage,
-                          EnemyBulletSprite sprite = EnemyBulletSprite::Generic) override;
+                          EnemyBulletSprite sprite = EnemyBulletSprite::Generic,
+                          std::uint8_t boss_bullet_strip = 0, float max_travel_sq = -1.f) override;
 
     /** Enemy bullet with optional soft homing after `straight_sec` (see `EnemyBulletActor`). */
     void spawnEnemyBulletSoftHoming(float x, float y, float vx, float vy, int damage, EnemyBulletSprite sprite,
-                                    double straight_sec, float max_turn_rad_per_sec);
+                                    double straight_sec, float max_turn_rad_per_sec,
+                                    std::uint8_t boss_bullet_strip = 0);
 
     void chasePlayerStep(EnemyActor& self, World& world, double dt, float chase_speed) override;
     void wanderStep(EnemyActor& self, World& world, double dt, float wander_speed,

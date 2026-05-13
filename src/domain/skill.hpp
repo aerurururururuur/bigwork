@@ -71,7 +71,7 @@ void bossDiffusionFireRing1(SkillCastContext& ctx);
 /** Second ring: 18 shots, global angle offset pi/12 vs first ring. */
 void bossDiffusionFireRing2(SkillCastContext& ctx);
 
-/** Fan aimed at player snapshot: +-30 deg, 20-28 rock bullets, medium speed. */
+/** Fan aimed at player: fewer rocks for readability (random count 13-18 on arc). */
 void bossFanBarrageFire(SkillCastContext& ctx);
 
 /** One-shot spiral snapshot (tangent bullets, expanding radius). */

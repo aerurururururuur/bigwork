@@ -27,6 +27,10 @@ struct RawInputSnapshot {
     bool dev_kill_all_enemies{false};
     /** Edge: Tab - cycle player character skin (battle, no overlay). */
     bool toggle_player_character{false};
+    /** Edge: Arrow Up on title menu (one frame). */
+    bool title_menu_nav_up{false};
+    /** Edge: Arrow Down on title menu (one frame). */
+    bool title_menu_nav_down{false};
 };
 
 } // namespace domain

@@ -146,7 +146,6 @@ void World::resetBattle() {
     player_.last_fire_dy_ = 0;
     player_.bullet_invuln_rem_ = 0.0;
     player_.resetSkillState();
-    player_.character_id_ = PlayerCharacterId::Role1;
 
     scatterObstacles();
     spawnEnemiesForWave(1);
@@ -250,7 +249,7 @@ void World::maybeSpawnBossAfterWaveClear(double dt) {
     auto boss = std::make_unique<EnemyActor>();
     boss->x_ = cx0;
     boss->y_ = cy0;
-    boss->resetForSpawn(EnemyArchetype::Boss, EnemySpriteId::Pebblin);
+    boss->resetForSpawn(EnemyArchetype::Boss, EnemySpriteId::BossCat);
     enemies_.push_back(std::move(boss));
     player_bullet_max_travel_world_ = wave_combat::kPlayerBossBulletTravelWorld;
     boss_released_ = true;
@@ -295,14 +294,21 @@ void World::cyclePlayerCharacter() {
                                                                                 : PlayerCharacterId::Role1;
 }
 
-void World::spawnEnemyBullet(float x, float y, float vx, float vy, int damage, EnemyBulletSprite sprite) {
-    bullets_.push_back(std::make_unique<EnemyBulletActor>(x, y, vx, vy, damage, sprite));
+void World::setPlayerCharacter(PlayerCharacterId id) {
+    player_.character_id_ = id;
+}
+
+void World::spawnEnemyBullet(float x, float y, float vx, float vy, int damage, EnemyBulletSprite sprite,
+                             std::uint8_t boss_bullet_strip, float max_travel_sq) {
+    bullets_.push_back(
+        std::make_unique<EnemyBulletActor>(x, y, vx, vy, damage, sprite, boss_bullet_strip, -1.0, 0.f, max_travel_sq));
 }
 
 void World::spawnEnemyBulletSoftHoming(float x, float y, float vx, float vy, int damage, EnemyBulletSprite sprite,
-                                       double straight_sec, float max_turn_rad_per_sec) {
-    bullets_.push_back(std::make_unique<EnemyBulletActor>(x, y, vx, vy, damage, sprite, straight_sec,
-                                                           max_turn_rad_per_sec));
+                                       double straight_sec, float max_turn_rad_per_sec,
+                                       std::uint8_t boss_bullet_strip) {
+    bullets_.push_back(std::make_unique<EnemyBulletActor>(x, y, vx, vy, damage, sprite, boss_bullet_strip,
+                                                           straight_sec, max_turn_rad_per_sec, -1.f));
 }
 
 void World::chasePlayerStep(EnemyActor& self, World& world, double dt, float chase_speed) {

@@ -3,6 +3,8 @@
 #include "application/render_snapshot.hpp"
 #include "domain/ports/iterminal.hpp"
 #include "domain/raw_input.hpp"
+#include "representation/boss_bullet_frames.hpp"
+#include "representation/boss_cat_resources.hpp"
 #include "representation/combat_vfx_particles.hpp"
 #include "representation/enemy_visual_resources.hpp"
 #include "representation/movement_particles.hpp"
@@ -75,11 +77,17 @@ private:
     PlayerRole2Resources role2_resources_{};
     sf::Texture player_book_bullet_tex_{};
     bool player_book_bullet_ready_{false};
+    sf::Texture player_role1_bullet_tex_{};
+    bool player_role1_bullet_ready_{false};
+    /** Role2 book strip: advances each frame for cycling frames in `drawBullets`. */
+    double book_strip_anim_sec_{0.0};
 
     EnemyVisualResources enemy_visuals_;
+    BossBulletFrameResources boss_bullet_frames_{};
     sf::Sprite enemy_draw_sprite_{};
-    /** Per `EnemySpriteId` species: looping animation clock for sheet clips. */
-    std::array<double, 4> enemy_species_anim_time_{};
+    BossCatResources boss_cat_resources_{};
+    /** Per `EnemySpriteId` species: looping animation clock for sheet clips (index 4 = boss cat). */
+    std::array<double, 5> enemy_species_anim_time_{};
 
     sf::Texture background_texture_{};
     sf::Sprite background_sprite_{};

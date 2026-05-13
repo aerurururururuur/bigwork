@@ -16,7 +16,9 @@ public:
     virtual void spawnPlayerBullet(float x, float y, float vx, float vy, int damage,
                                    std::uint8_t player_bullet_visual = 0) = 0;
     virtual void spawnEnemyBullet(float x, float y, float vx, float vy, int damage,
-                                   EnemyBulletSprite sprite = EnemyBulletSprite::Generic) = 0;
+                                   EnemyBulletSprite sprite = EnemyBulletSprite::Generic,
+                                   std::uint8_t boss_bullet_strip = 0,
+                                   float max_travel_sq = -1.f) = 0;
 };
 
 /** Melee chase / wander without spawning bullets. */
