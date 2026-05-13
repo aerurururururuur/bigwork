@@ -33,6 +33,8 @@ inline constexpr std::uint8_t kPlayerBulletViewRole1Red = 2;
 /** `Book.png` strip layout (Role2 book bullet); texture width must divide by columns. */
 inline constexpr int kBookBulletStripColumns = 10;
 inline constexpr int kBookBulletStripRows = 1;
+/** Role2 book bullet: draw height = base_thick * this (was 3.2f; larger = bigger sprite). */
+inline constexpr float kRole2BookBulletThicknessMul = 4.75f;
 
 /** Max simultaneous foot-dust particles (visual only). */
 inline constexpr int kMovementParticleCap = 256;

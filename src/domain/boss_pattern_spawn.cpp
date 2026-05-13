@@ -131,7 +131,6 @@ void boss_pattern_spawn_wall_volley(World& world, float player_x, float boss_x, 
     if (bullet_count <= 0 || playfield_width_cells <= 0 || playfield_height_cells <= 0) {
         return;
     }
-    const float wf = static_cast<float>(playfield_width_cells);
     const float hf = static_cast<float>(playfield_height_cells);
     const float y0 = std::max(wall_inset, y_margin);
     const float y1 = std::min(hf - wall_inset, hf - y_margin);
@@ -139,7 +138,10 @@ void boss_pattern_spawn_wall_volley(World& world, float player_x, float boss_x, 
         return;
     }
     const bool from_left = (player_x >= boss_x);
-    const float spawn_x = from_left ? wall_inset : (wf - wall_inset);
+    // Spawn just inside walkable columns (0 and width-1 are walls; same convention as `World` mob spawn).
+    const float inner_left_x = 1.f + wall_inset;
+    const float inner_right_x = static_cast<float>(playfield_width_cells - 2) + wall_inset;
+    const float spawn_x = from_left ? inner_left_x : inner_right_x;
     const float vx = from_left ? bullet_speed : -bullet_speed;
     for (int i = 0; i < bullet_count; ++i) {
         const float t =

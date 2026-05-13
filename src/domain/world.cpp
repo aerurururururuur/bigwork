@@ -292,13 +292,7 @@ void World::tickBossPhaseAdds(double dt) {
     boss_add_spawn_rem_ = wave_combat::kBossPhaseAddSpawnIntervalSec;
 }
 
-void World::trySpawnBossPhaseAdd() {
-    if (!livingBossPresent(enemies_)) {
-        return;
-    }
-    if (livingBossMinionCount(enemies_) >= wave_combat::kBossPhaseAddMaxAlive) {
-        return;
-    }
+bool World::trySpawnOneBossPhaseAddMinion() {
     for (int tries = 0; tries < kEnemySpawnMaxTries; ++tries) {
         const int x = rng_.uniformInt(1, playfield_.width() - 2);
         const int y = rng_.uniformInt(1, playfield_.height() - 2);
@@ -320,7 +314,25 @@ void World::trySpawnBossPhaseAdd() {
             rng_.uniformInt(0, 1) == 0 ? EnemySpriteId::Slime : EnemySpriteId::BugBit;
         m->resetForSpawn(EnemyArchetype::BossMinion, sp);
         enemies_.push_back(std::move(m));
+        return true;
+    }
+    return false;
+}
+
+void World::trySpawnBossPhaseAdd() {
+    if (!livingBossPresent(enemies_)) {
         return;
+    }
+    const int living = livingBossMinionCount(enemies_);
+    if (living >= wave_combat::kBossPhaseAddMaxAlive) {
+        return;
+    }
+    const int room = wave_combat::kBossPhaseAddMaxAlive - living;
+    const int batch = std::min(wave_combat::kBossPhaseAddPerSpawnBatch, room);
+    for (int s = 0; s < batch; ++s) {
+        if (!trySpawnOneBossPhaseAddMinion()) {
+            break;
+        }
     }
 }
 

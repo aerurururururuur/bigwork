@@ -7,8 +7,12 @@ inline constexpr float kPlayerMobBulletTravelWorld = 4.5f;
 /** Player bullets after Boss spawns; mob-ranged enemy bullets use `kPlayerMobBulletTravelWorld` max range too. */
 inline constexpr float kPlayerBossBulletTravelWorld = 28.f;
 
-/** Boss fight adds: max alive, spawn interval, chase speed, HP (`EnemyArchetype::BossMinion`). */
-inline constexpr int kBossPhaseAddMaxAlive = 3;
+/**
+ * Boss fight adds (`EnemyArchetype::BossMinion`): max concurrent minions on the field.
+ * Each timer pulse spawns up to `kBossPhaseAddPerSpawnBatch`, clamped by remaining slots under the cap.
+ */
+inline constexpr int kBossPhaseAddMaxAlive = 50;
+inline constexpr int kBossPhaseAddPerSpawnBatch = 3;
 inline constexpr double kBossPhaseAddSpawnIntervalSec = 10.0;
 inline constexpr float kBossPhaseAddChaseSpeed = 3.15f;
 inline constexpr int kBossPhaseAddHp = 4;

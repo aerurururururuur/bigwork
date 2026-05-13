@@ -39,22 +39,31 @@ using representation::SpriteLinearClip;
 int keyCodeToDevBossSkillSlot(sf::Keyboard::Key code) {
     switch (code) {
     case sf::Keyboard::Num1:
+    case sf::Keyboard::Numpad1:
         return 1;
     case sf::Keyboard::Num2:
+    case sf::Keyboard::Numpad2:
         return 2;
     case sf::Keyboard::Num3:
+    case sf::Keyboard::Numpad3:
         return 3;
     case sf::Keyboard::Num4:
+    case sf::Keyboard::Numpad4:
         return 4;
     case sf::Keyboard::Num5:
+    case sf::Keyboard::Numpad5:
         return 5;
     case sf::Keyboard::Num6:
+    case sf::Keyboard::Numpad6:
         return 6;
     case sf::Keyboard::Num7:
+    case sf::Keyboard::Numpad7:
         return 7;
     case sf::Keyboard::Num8:
+    case sf::Keyboard::Numpad8:
         return 8;
     case sf::Keyboard::Num9:
+    case sf::Keyboard::Numpad9:
         return 9;
     default:
         return 0;
@@ -622,7 +631,7 @@ void SfmlGameWindow::drawBullets(const application::RenderSnapshot& snap) {
                 enemy_draw_sprite_.setTextureRect(sf::IntRect(col * fw, 0, fw, fh));
                 const float tw = static_cast<float>(fw);
                 const float th = static_cast<float>(fh);
-                const float target = thick * 3.2f;
+                const float target = thick * kRole2BookBulletThicknessMul;
                 const float sc = target / th;
                 enemy_draw_sprite_.setScale(sc, sc);
                 enemy_draw_sprite_.setOrigin(tw * 0.5f, th * 0.5f);

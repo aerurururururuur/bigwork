@@ -110,6 +110,8 @@ private:
     void maybeSpawnBossAfterWaveClear(double dt);
     void tickBossPhaseAdds(double dt);
     void trySpawnBossPhaseAdd();
+    /** One minion if a valid cell is found; used by `trySpawnBossPhaseAdd` for batch pulses. */
+    bool trySpawnOneBossPhaseAddMinion();
     void cullDynamics();
     void evaluateBattleOutcome();
     void applyContactDamage(double dt);
@@ -142,7 +144,7 @@ private:
     int mob_wave_index_{1};
     double wave_intermission_rem_{0.0};
     float player_bullet_max_travel_world_{wave_combat::kPlayerMobBulletTravelWorld};
-    /** While Boss is alive: countdown to spawn next `BossMinion` (see `tickBossPhaseAdds`). */
+    /** While Boss is alive: countdown to next `BossMinion` spawn pulse (see `tickBossPhaseAdds`). */
     double boss_add_spawn_rem_{0.0};
 };
 
