@@ -42,8 +42,7 @@ int main() {
     infrastructure::StdRandom rng(seed);
 
     domain::World world(rng);
-    application::GameApplication app(world, audit, representation::kScreenPixelsPerLogicalCell,
-                                       game_cfg.run_mode);
+    application::GameApplication app(world, audit, representation::kScreenPixelsPerLogicalCell, game_cfg);
     representation::FrameComposer composer;
     const bool dev_boss_digit_keys = (game_cfg.run_mode == infrastructure::RunMode::Development);
     representation::SfmlGameWindow window(domain::ScreenLayout::kCols, domain::ScreenLayout::kRows,

@@ -1,5 +1,9 @@
 #include "representation/player_sprite_animator.hpp"
 
+#include "representation/player_role2_resources.hpp"
+
+#include <SFML/Graphics/Texture.hpp>
+
 #include <algorithm>
 #include <cmath>
 
@@ -49,6 +53,9 @@ void PlayerSpriteAnimator::advance_looping(double dt, const SpriteLinearClip& cl
 }
 
 void PlayerSpriteAnimator::advance_death(double dt) {
+    if (!cfg_ || !cfg_->valid) {
+        return;
+    }
     const SpriteLinearClip& clip = cfg_->death;
     if (clip.frames.empty() || clip.fps <= 0.f) {
         return;
@@ -70,8 +77,30 @@ void PlayerSpriteAnimator::advance_death(double dt) {
     }
 }
 
+void PlayerSpriteAnimator::advance_death_clip(const SpriteLinearClip& clip, double dt) {
+    if (clip.frames.empty() || clip.fps <= 0.f) {
+        return;
+    }
+    if (death_settled_) {
+        return;
+    }
+    frame_time_ += dt;
+    const double spf = 1.0 / static_cast<double>(clip.fps);
+    const int last = static_cast<int>(clip.frames.size()) - 1;
+    while (frame_time_ >= spf) {
+        frame_time_ -= spf;
+        if (frame_index_ >= last) {
+            death_settled_ = true;
+            frame_index_ = last;
+            break;
+        }
+        ++frame_index_;
+    }
+}
+
 void PlayerSpriteAnimator::update(double dt, const application::RenderSnapshot& snap) {
-    if (!cfg_ || !cfg_->valid) {
+    const bool use_r2 = role2_ != nullptr && role2_->valid() && snap.player_character == 1u;
+    if (!use_r2 && (!cfg_ || !cfg_->valid)) {
         return;
     }
 
@@ -85,7 +114,11 @@ void PlayerSpriteAnimator::update(double dt, const application::RenderSnapshot& 
             frame_time_ = 0.0;
             death_settled_ = false;
         }
-        advance_death(dt);
+        if (use_r2) {
+            advance_death_clip(role2_->death().clip, dt);
+        } else {
+            advance_death(dt);
+        }
         return;
     }
 
@@ -112,7 +145,15 @@ void PlayerSpriteAnimator::update(double dt, const application::RenderSnapshot& 
     } else if (snap.player_vx > kFacingVxEpsilon) {
         face_left_ = false;
     }
-    advance_looping(dt, active_clip());
+
+    if (use_r2 && skill_overlay_frame_ >= 0) {
+        // Attack strip index comes from `skill_overlay_frame_`; do not advance idle/run underneath.
+    } else if (use_r2) {
+        const SpriteLinearClip& clip = (mode_ == Mode::Run) ? role2_->run().clip : role2_->idle().clip;
+        advance_looping(dt, clip);
+    } else if (cfg_ && cfg_->valid) {
+        advance_looping(dt, active_clip());
+    }
 }
 
 sf::IntRect PlayerSpriteAnimator::texture_rect(unsigned texture_width, unsigned texture_height) const {
@@ -167,6 +208,67 @@ void PlayerSpriteAnimator::apply_to_sprite(sf::Sprite& sprite, unsigned texture_
     const float sx = face_left_ ? -scale : scale;
     sprite.setScale(sx, scale);
     sprite.setOrigin(std::floor(frame_w * 0.5f), frame_h);
+}
+
+PlayerRole2Draw PlayerSpriteAnimator::compute_role2_draw(const application::RenderSnapshot& snap, int cell_px,
+                                                         float disc_radius_px) const {
+    PlayerRole2Draw out{};
+    if (role2_ == nullptr || !role2_->valid() || snap.player_character != 1u) {
+        return out;
+    }
+
+    const PlayerRole2Strip* strip = nullptr;
+    int idx = 0;
+    const bool want_death = snap.battle_outcome == application::BattleOutcomeView::Defeat && snap.player_hp <= 0;
+    if (want_death) {
+        strip = &role2_->death();
+    } else if (skill_overlay_frame_ >= 0) {
+        strip = &role2_->attack();
+    } else if (mode_ == Mode::Run) {
+        strip = &role2_->run();
+    } else {
+        strip = &role2_->idle();
+    }
+
+    if (strip == nullptr || strip->clip.frames.empty() || strip->columns <= 0 || strip->rows <= 0) {
+        return out;
+    }
+    const int n = static_cast<int>(strip->clip.frames.size());
+    if (want_death) {
+        idx = std::clamp(frame_index_, 0, n - 1);
+        if (death_settled_) {
+            idx = n - 1;
+        }
+    } else if (skill_overlay_frame_ >= 0) {
+        idx = std::min(skill_overlay_frame_, n - 1);
+    } else {
+        idx = std::clamp(frame_index_, 0, n - 1);
+    }
+
+    const sf::Texture& tex = strip->texture;
+    const auto sz = tex.getSize();
+    const int fw = static_cast<int>(sz.x) / strip->columns;
+    const int fh = static_cast<int>(sz.y) / strip->rows;
+    if (fw <= 0 || fh <= 0) {
+        return out;
+    }
+    const SpriteFrameCell& fc = strip->clip.frames[static_cast<std::size_t>(idx)];
+    out.rect = sf::IntRect(fc.col * fw, fc.row * fh, fw, fh);
+    out.texture = &tex;
+
+    const float frame_h = static_cast<float>(out.rect.height);
+    const float frame_w = static_cast<float>(out.rect.width);
+    const float cell_f = static_cast<float>(std::max(1, cell_px));
+    const float from_json = role2_->scale_cells() * cell_f;
+    const float from_disc = 2.f * disc_radius_px * kPlayerHeightOverEnemyDisc;
+    const float target_h = std::max(from_json, from_disc) * kPlayerVisualSizeMultiplier;
+    const float scale = target_h / std::max(1.f, frame_h);
+    out.scale_x = face_left_ ? -scale : scale;
+    out.scale_y = scale;
+    out.origin_x = std::floor(frame_w * 0.5f);
+    out.origin_y = frame_h;
+    out.ok = true;
+    return out;
 }
 
 } // namespace representation

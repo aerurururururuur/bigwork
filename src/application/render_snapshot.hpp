@@ -15,6 +15,8 @@ enum class BulletFactionView : std::uint8_t { Player = 0, Enemy = 1 };
 /** Snapshot-only combat Vfx kinds (mirrors domain CombatVfxKind values). */
 enum class CombatVfxKindView : std::uint8_t { EnemyDied = 0, PlayerHitByBullet = 1 };
 
+enum class OverlayPlacement : std::uint8_t { Centered = 0, BottomBar = 1 };
+
 struct OverlayModel {
     bool active{false};
     std::vector<std::string> lines;
@@ -23,6 +25,12 @@ struct OverlayModel {
     int start_btn_row{0};
     int start_btn_width{0};
     int start_btn_height{0};
+    /** Panel top-left and size in logical cells; filled by overlay_layout prepare*. */
+    OverlayPlacement placement{OverlayPlacement::Centered};
+    int panel_col{0};
+    int panel_row{0};
+    int panel_w{0};
+    int panel_h{0};
 };
 
 struct EnemyView {
@@ -47,10 +55,19 @@ struct BulletView {
     BulletFactionView faction{BulletFactionView::Player};
     /** Domain `EnemyBulletSprite` when `faction == Enemy`; else 0. */
     std::uint8_t enemy_bullet_sprite{0};
+    /** Role2 book bullet etc.; 0 = default player bullet rect. */
+    std::uint8_t player_bullet_visual{0};
 };
 
 struct CombatVfxEventView {
     CombatVfxKindView kind{CombatVfxKindView::EnemyDied};
+    float world_x{0.f};
+    float world_y{0.f};
+};
+
+/** 0 = red heart (HP), 1 = blue heart (MP); mirrors domain::PickupKind. */
+struct PickupDropView {
+    std::uint8_t kind{0};
     float world_x{0.f};
     float world_y{0.f};
 };
@@ -80,20 +97,35 @@ struct RenderSnapshot {
     /** Skill overlay animation; `total <= 0` means idle/run/death clips only. */
     float player_skill_anim_remaining{0.f};
     float player_skill_anim_total{0.f};
+    /** `domain::PlayerCharacterId` as uint8 (0 = Role1, 1 = Role2). */
+    std::uint8_t player_character{0};
     std::vector<EnemyView> enemies;
     std::vector<BulletView> bullets;
     int score{0};
     int combo{0};
     double combo_timer{0.0};
+    /** Player bullet / Q skill damage multiplier from score tiers (1 when not boosted). */
+    float player_outgoing_damage_mult{1.f};
+    /** Mob wave label for HUD (1..battle_mob_waves_total); during intermission shows upcoming wave. */
+    int battle_wave_index{0};
+    int battle_mob_waves_total{0};
+    int enemies_alive_count{0};
+    /** Seconds until next mob wave while intermission active; -1 when not counting down. */
+    double next_wave_countdown_sec{-1.0};
+
+    std::vector<PickupDropView> pickups;
     std::vector<CombatVfxEventView> combat_vfx;
     ThemeStyle theme{ThemeStyle::Dusk};
     BattleOutcomeView battle_outcome{BattleOutcomeView::None};
     OverlayModel overlay;
 
+    /** True when battle overlay blocks simulation (bottom story dialog). */
+    bool overlay_modal_pause{false};
+
     /** True when any living enemy uses the Boss archetype (for BGM track selection). */
     bool battle_has_boss_enemy{false};
 
-    /** True only during active battle (for foot-dust etc.); title/victory/defeat false. */
+    /** True during battle without modal story dialog (foot-dust, etc.). */
     bool gameplay_active{false};
     /** True when horizontal speed magnitude exceeds epsilon (for foot dust). */
     bool player_emit_dust{false};

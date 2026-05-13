@@ -81,6 +81,7 @@ add_library(roadside_representation STATIC
     src/representation/frame_composer.cpp
     src/representation/theme_palette.cpp
     src/representation/sprite_sheet_config.cpp
+    src/representation/player_role2_resources.cpp
     src/representation/enemy_visual_resources.cpp
     src/representation/player_sprite_animator.cpp
     src/representation/sfml_game_window.cpp

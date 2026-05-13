@@ -11,7 +11,7 @@ inline constexpr int kScreenPixelsPerLogicalCell = 10;
  * Nudge player sprite / fallback circle downward in **logical cells** (visual only).
  * Domain feet anchor unchanged; only Representation draw offset.
  */
-inline constexpr float kPlayerSpriteDrawDownCells = 0.50f;
+inline constexpr float kPlayerSpriteDrawDownCells = 1.75f;
 
 /**
  * Sky-only: each logical sky cell is drawn as kSkyMicroCellsPerAxis x kSkyMicroCellsPerAxis

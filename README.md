@@ -47,7 +47,7 @@ background_image=assets/your_background.png
 
 ### 背景音乐 BGM（可选）
 
-- `music_bgm=`：相对或绝对路径，解析规则与 `background_image` 相同；推荐 **OGG** 流式播放（WAV 亦可）。用于**清完第一波小怪后、Boss 出现前**的普通战斗段。
+- `music_bgm=`：相对或绝对路径，解析规则与 `background_image` 相同；推荐 **OGG** 流式播放（WAV 亦可）。用于 **Boss 登场前的全部杂兵阶段**（多波次清场间隙仍属该段）。
 - `music_bgm_boss=`：可选；场上存在 **Boss 体型敌人**（`EnemyArchetype::Boss`）时播放。未配置时 Boss 阶段仍使用 `music_bgm`（若已配置）。
 - `music_volume=`：可选，整数 **0–100**，缺省 **70**。
 - **策略**：仅在 **Battle** 状态播放；标题 / 胜利 / 失败 **暂停**（两轨均暂停，各自保留进度）。Boss 出现时在两条音轨之间切换；若只配置了其中一条，则整场战斗使用该条。
@@ -55,10 +55,61 @@ background_image=assets/your_background.png
 
 示例见 [`game_config.example.ini`](game_config.example.ini)。
 
+### 分数、连击与按分数加伤害（可选 INI）
+
+- **HUD**：战斗中左上角显示 `Score:` 与下一行 `Damage: x…`（来自当前总分档）；连击倍率仍显示在分数行末 `xN`。其下为 **Wave x/y**（当前/杂兵总波数；波间休整时显示即将开始的波次）、**Enemies: n**（存活敌人数，含 Boss），若处于休整倒计时则多一行 **Next: xs**。
+- **击杀得分**：近战 / 远程 / 精英 / Boss 各有基底分，再乘以连击倍率（1～8），并在短时窗口内维持连击层数；详见 `src/domain/score_state.cpp` 顶部注释。
+- **Boss 蹭血得分**：Boss 每被玩家子弹扣 1 点实际生命，总分 +1（不计入连击）。
+- **按总分加玩家输出伤害**：默认总分 **大于 100** 时普攻与 Q 技能子弹 **×1.2**，**大于 300** 时 **×1.5**（高档覆盖低档）。可在 `game_config.ini` 中覆盖，键名见 `game_config.example.ini`；若 `tier2_score ≤ tier1_score` 则整组恢复默认。
+
+### 多波次杂兵、玩家子弹射程与胜利条件
+
+- Boss 前共 **3** 波杂兵（可调 `src/domain/wave_combat_tuning.hpp` 中 `kMobWavesBeforeBoss`）；每波生成数量随波次略增（有上限），清光非 Boss 敌人后进入 **约 2 秒** 休整，再随机散布障碍并刷新下一波。
+- **胜利**：仅当 **Boss 已生成**（`boss_released` 语义）且场上 **无任何存活敌人** 时判定；波间场上暂时无人 **不会** 判胜。
+- **玩家子弹最大飞行距离**：杂兵阶段较短，Boss 登场后自动切换为远距离档；普攻与 **Q 环形齐射** 共用 `World::spawnPlayerBullet`。具体世界单位见 `kPlayerMobBulletTravelWorld` / `kPlayerBossBulletTravelWorld`。
+- 杂兵与远程弹的 **血量、射速、移速、敌弹伤害** 等压迫向数值亦集中在 `wave_combat_tuning.hpp`，便于答辩时统一说明「难度表」。
+- **可选扩展**：波次开始/ Boss 现身的短音效、对 `sf::View` 的轻微镜头抖动未默认接入，可在 `GameApplication` 或 `SfmlGameWindow` 层按快照字段自行挂接。
+
+### 击杀掉落：红心 / 蓝心
+
+- 击杀敌人时按概率在死亡点附近生成 **红心**（回血）或 **蓝心**（回蓝），每击杀最多掉落 **一种**（互斥随机）。杂兵与 Boss 使用不同掉落率，常量见 [`src/domain/pickup_drop_tuning.hpp`](src/domain/pickup_drop_tuning.hpp)（`kMobDropRedPct` / `kMobDropBluePct`、`kBossDrop*`、回复量 `kRedHeartHealHp` / `kBlueHeartHealMp`、拾取距离 `kPickupRadiusWorld`）。
+- **拾取**：玩家脚点与掉落物中心距离小于拾取半径即可拾取。**满血**时不会吃掉红心，**满蓝**时不会吃掉蓝心（道具留在地面）。
+- 掉落生成在可走地形上；若死亡点不可走，会在小范围内尝试偏移若干次。
+
+### 开发模式与 Boss 技能热键（可选）
+
+在 `game_config.ini` 中设置 `run_mode=development`（大小写不敏感；缺省或 `production` 为正式行为）。仅在开发模式下，**战斗中**且**无全屏遮罩**时：
+
+- 主键盘 **X**：**当帧秒杀场上全部敌人**（含 Boss；走正常 `applyDamage`，击杀分与掉落逻辑照常）。
+- 主键盘 **1–8**：单次触发当前 Boss 的对应技能（需场上存在 Boss）：
+
+| 键 | 技能 |
+|----|------|
+| 1 | 环形扩散第一圈 |
+| 2 | 环形扩散第二圈 |
+| 3 | 定向扇形 |
+| 4 | 螺旋快照弹幕 |
+| 5 | 左右双向扇形 |
+| 6 | 内外对向双环 |
+| 7 | 软追踪散弹 |
+| 8 | 侧墙横排齐射 |
+
+弹幕几何与复用逻辑在 `domain/boss_pattern_spawn.*`；`skill.cpp` 中的 `boss*Fire` 仅做 `SkillCastContext` 校验与调参。生产模式不启用 **X** 秒杀与 **1–8** Boss 技能热键。
+
+### Boss 血量阶段与符卡（自动）
+
+Boss AI（`domain/enemy_behavior.cpp` 中 `BossHybridBehavior`）按 **当前 HP / maxHp** 切换模式；阈值常量见 [`domain/boss_hp_spell_constants.hpp`](src/domain/boss_hp_spell_constants.hpp)（默认 **>70%** 为前期，**≤70%** 进入中后期符卡）。
+
+- **前期（>70%）**：仍为「双圈扩散 ↔ 扇形」交替，由 `ring_burst_rem_` 计时触发。
+- **中后期（≤70%）**：`ring_burst_rem_` 到期后进入符卡链：**前摇 → 第一圈 → 等待 → 第二圈 → 短间隔 → 双向扇形 → 短间隔 → 软追踪散弹 → 短间隔 → 内外对向双环 → 虚弱**。虚弱期内 **不递减** `ring_burst_rem_`，且 Boss **承受玩家子弹伤害 ×1.5**（通过 `EnemyActor::incomingDamageMultiplier`）；虚弱结束恢复倍率并重新武装大 CD。
+
+≤40% 与 (40%,70%] 目前共用同一套符卡；若需差异化可只改常量表与 `BossHybridBehavior` 分支。
+
 ## 操作
 
 - **Enter** 或 **点击标题中的 Start 按钮**：开始战斗。
-- **方向键**：移动；战斗中 **鼠标指向** 决定射击方向（360°）；**Space** 或 **按住鼠标左键**：开火。
+- **WASD**：移动；战斗中 **鼠标指向** 决定射击方向（360°）；**Space** 或 **按住鼠标左键**：开火。**Q**：全周环射；**E**：窄扇形副武器（有 MP 与冷却）。
+- **Tab**：战斗中在 **Role1 / Role2** 主角外观间切换（每次 **新开局** 重置为 Role1）；Role2 时玩家子弹为书本贴图（`assets/sprites/bullets/Book.png`）；条带资源见 `assets/sprites/player_sheet_role2.json`。
 - **T**：主题配色切换。
 - **Esc** 或关闭窗口：退出。
 

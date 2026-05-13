@@ -6,6 +6,8 @@
 #include "domain/enemy_sprite_id.hpp"
 #include "domain/tile_base.hpp"
 #include "domain/vec2.hpp"
+#include "domain/pickup_drop_tuning.hpp"
+#include "domain/wave_combat_tuning.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -34,6 +36,17 @@ constexpr EnemySpawnRow kEnemySpawnTable[] = {
     {EnemySpriteId::Spookmoth, EnemyArchetype::Ranged},
     {EnemySpriteId::Pebblin, EnemyArchetype::EliteHybrid},
 };
+
+EnemySpawnRow pickSpawnRowForWave(int placed, int wave_number, IRandom& rng) {
+    EnemySpawnRow row = kEnemySpawnTable[(placed + std::max(1, wave_number) - 1) % 4];
+    if (wave_number >= 2 && placed == 0) {
+        row = {EnemySpriteId::Spookmoth, EnemyArchetype::Ranged};
+    }
+    if (wave_number >= 3 && rng.uniformInt(0, 9) < 3) {
+        row = kEnemySpawnTable[3];
+    }
+    return row;
+}
 
 } // namespace
 
@@ -112,10 +125,14 @@ void World::resetBattle() {
     frame_intent_ = {};
     bullets_.clear();
     enemies_.clear();
+    pickups_.clear();
     vfx_pending_.clear();
     score_.reset();
     playfield_ = PlayfieldGrid{};
     boss_released_ = false;
+    mob_wave_index_ = 1;
+    wave_intermission_rem_ = 0.0;
+    player_bullet_max_travel_world_ = wave_combat::kPlayerMobBulletTravelWorld;
 
     const int w = playfield_.width();
     const int h = playfield_.height();
@@ -129,13 +146,14 @@ void World::resetBattle() {
     player_.last_fire_dy_ = 0;
     player_.bullet_invuln_rem_ = 0.0;
     player_.resetSkillState();
+    player_.character_id_ = PlayerCharacterId::Role1;
 
     scatterObstacles();
-    spawnEnemies();
+    spawnEnemiesForWave(1);
 }
 
 void World::scatterObstacles() {
-    const int n = 10 + rng_.uniformInt(0, 6);
+    const int n = wave_combat::kScatterObstacleBase + rng_.uniformInt(0, wave_combat::kScatterObstacleExtraRoll);
     for (int i = 0; i < n; ++i) {
         for (int t = 0; t < kScatterTriesPerObstacle; ++t) {
             const int x = rng_.uniformInt(2, playfield_.width() - 3);
@@ -154,8 +172,11 @@ void World::scatterObstacles() {
     }
 }
 
-void World::spawnEnemies() {
-    const int count = 5;
+void World::spawnEnemiesForWave(int wave_number) {
+    const int wn = std::max(1, wave_number);
+    const int count = std::min(wave_combat::kMobSpawnMaxCount,
+                                 wave_combat::kMobSpawnBaseCount +
+                                     (wn - 1) * wave_combat::kMobSpawnPerWaveExtra);
     int placed = 0;
     for (int tries = 0; placed < count && tries < kEnemySpawnMaxTries; ++tries) {
         const int x = rng_.uniformInt(1, playfield_.width() - 2);
@@ -174,67 +195,65 @@ void World::spawnEnemies() {
         auto e = std::make_unique<EnemyActor>();
         e->x_ = ex;
         e->y_ = ey;
-        const EnemySpawnRow row = kEnemySpawnTable[placed % 4];
+        const EnemySpawnRow row = pickSpawnRowForWave(placed, wn, rng_);
         e->resetForSpawn(row.archetype, row.sprite);
         enemies_.push_back(std::move(e));
         ++placed;
     }
 }
 
-void World::maybeSpawnBossAfterWaveClear() {
+void World::maybeSpawnBossAfterWaveClear(double dt) {
     if (boss_released_) {
         return;
     }
     for (const auto& e : enemies_) {
-        if (e && e->hp() > 0) {
+        if (e && e->hp() > 0 && e->archetype() == EnemyArchetype::Boss) {
             return;
         }
     }
 
-    playfield_.clearObstaclesToFloor();
-
-    const auto place_boss_at = [this](float ex, float ey) -> bool {
-        if (!enemyFitsAt(ex, ey, nullptr)) {
-            return false;
+    int mob_alive = 0;
+    for (const auto& e : enemies_) {
+        if (!e || e->hp() <= 0) {
+            continue;
         }
-        auto boss = std::make_unique<EnemyActor>();
-        boss->x_ = ex;
-        boss->y_ = ey;
-        boss->resetForSpawn(EnemyArchetype::Boss, EnemySpriteId::Pebblin);
-        enemies_.push_back(std::move(boss));
-        return true;
-    };
+        if (e->archetype() != EnemyArchetype::Boss) {
+            ++mob_alive;
+        }
+    }
+    if (mob_alive > 0) {
+        return;
+    }
+
+    if (mob_wave_index_ < wave_combat::kMobWavesBeforeBoss) {
+        if (wave_intermission_rem_ > 0.0) {
+            wave_intermission_rem_ -= dt;
+            if (wave_intermission_rem_ <= 0.0) {
+                wave_intermission_rem_ = 0.0;
+                scatterObstacles();
+                ++mob_wave_index_;
+                spawnEnemiesForWave(mob_wave_index_);
+            }
+        } else {
+            wave_intermission_rem_ = wave_combat::kWaveIntermissionSec;
+        }
+        return;
+    }
+
+    playfield_.clearObstaclesToFloor();
 
     const float wf = static_cast<float>(playfield_.width());
     const float hf = static_cast<float>(playfield_.height());
     const float cx0 = wf * 0.5f;
     const float cy0 = hf * 0.5f - kBossSpawnAboveCenterTiles;
 
-    static constexpr float kOff[][2] = {
-        {0.f, 0.f},   {1.f, 0.f},   {-1.f, 0.f},  {0.f, 1.f},   {0.f, -1.f}, {1.f, -1.f}, {-1.f, -1.f},
-        {1.f, 1.f},   {-1.f, 1.f},  {2.f, 0.f},   {-2.f, 0.f},  {0.f, 2.f},  {0.f, -2.f}, {2.f, -1.f},
-        {-2.f, -1.f}, {2.f, 1.f},   {-2.f, 1.f},  {3.f, 0.f},   {-3.f, 0.f},
-    };
-    for (const auto& d : kOff) {
-        if (place_boss_at(cx0 + d[0], cy0 + d[1])) {
-            boss_released_ = true;
-            return;
-        }
-    }
-
-    for (int y = 1; y < playfield_.height() - 1; ++y) {
-        for (int x = 1; x < playfield_.width() - 1; ++x) {
-            if (!playfield_.walkable(x, y)) {
-                continue;
-            }
-            const float ex = static_cast<float>(x) + kPlayerSpawnInset;
-            const float ey = static_cast<float>(y) + kPlayerSpawnInset;
-            if (place_boss_at(ex, ey)) {
-                boss_released_ = true;
-                return;
-            }
-        }
-    }
+    auto boss = std::make_unique<EnemyActor>();
+    boss->x_ = cx0;
+    boss->y_ = cy0;
+    boss->resetForSpawn(EnemyArchetype::Boss, EnemySpriteId::Pebblin);
+    enemies_.push_back(std::move(boss));
+    player_bullet_max_travel_world_ = wave_combat::kPlayerBossBulletTravelWorld;
+    boss_released_ = true;
 }
 
 void World::simulateStep(double dt) {
@@ -245,6 +264,7 @@ void World::simulateStep(double dt) {
     intent_ = {};
 
     player_.step(*this, dt);
+    updatePickupsAndCollect(dt);
     for (auto& e : enemies_) {
         if (e) {
             e->step(*this, dt);
@@ -259,12 +279,20 @@ void World::simulateStep(double dt) {
     cullDynamics();
     applyContactDamage(dt);
     score_.tick(dt);
-    maybeSpawnBossAfterWaveClear();
+    maybeSpawnBossAfterWaveClear(dt);
     evaluateBattleOutcome();
 }
 
-void World::spawnPlayerBullet(float x, float y, float vx, float vy, int damage) {
-    bullets_.push_back(std::make_unique<PlayerBulletActor>(x, y, vx, vy, damage));
+void World::spawnPlayerBullet(float x, float y, float vx, float vy, int damage, std::uint8_t player_bullet_visual) {
+    const float r = player_bullet_max_travel_world_;
+    const float max_sq = r > 0.f ? r * r : -1.f;
+    bullets_.push_back(
+        std::make_unique<PlayerBulletActor>(x, y, vx, vy, damage, max_sq, player_bullet_visual));
+}
+
+void World::cyclePlayerCharacter() {
+    player_.character_id_ = (player_.character_id_ == PlayerCharacterId::Role1) ? PlayerCharacterId::Role2
+                                                                                : PlayerCharacterId::Role1;
 }
 
 void World::spawnEnemyBullet(float x, float y, float vx, float vy, int damage, EnemyBulletSprite sprite) {
@@ -354,6 +382,100 @@ void World::onEnemyBulletHitPlayer(int raw_damage) {
 void World::notifyEnemyKilled(EnemyActor& enemy) {
     score_.onEnemyKilled(enemy.archetype());
     pushCombatVfx(CombatVfxKind::EnemyDied, enemy.x(), enemy.y());
+    maybeSpawnPickupOnKill(enemy);
+}
+
+bool World::tryPlacePickup(PickupKind kind, float base_x, float base_y) {
+    for (int attempt = 0; attempt < pickup::kPickupSpawnNudgeTries; ++attempt) {
+        float ox = base_x;
+        float oy = base_y;
+        if (attempt > 0) {
+            ox += static_cast<float>(rng_.uniformInt(-2, 2)) * 0.2f;
+            oy += static_cast<float>(rng_.uniformInt(-2, 2)) * 0.2f;
+        }
+        if (terrainCircleWalkable(ox, oy, pickup::kPickupBodyRadiusWorld)) {
+            pickups_.push_back(PickupDrop{kind, ox, oy});
+            return true;
+        }
+    }
+    return false;
+}
+
+void World::maybeSpawnPickupOnKill(const EnemyActor& enemy) {
+    const bool boss = enemy.archetype() == EnemyArchetype::Boss;
+    const int roll = rng_.uniformInt(0, 99);
+    const int pr = boss ? pickup::kBossDropRedPct : pickup::kMobDropRedPct;
+    const int pb = boss ? pickup::kBossDropBluePct : pickup::kMobDropBluePct;
+    if (roll < pr) {
+        tryPlacePickup(PickupKind::RedHeart, enemy.x(), enemy.y());
+    } else if (roll < pr + pb) {
+        tryPlacePickup(PickupKind::BlueHeart, enemy.x(), enemy.y());
+    }
+}
+
+void World::updatePickupsAndCollect(double dt) {
+    (void)dt;
+    const float rs = pickup::kPickupRadiusWorld;
+    const float rsq = rs * rs;
+    for (std::size_t i = 0; i < pickups_.size();) {
+        const PickupDrop& p = pickups_[i];
+        const float dx = player_.x_ - p.x;
+        const float dy = player_.y_ - p.y;
+        if (lengthSq(dx, dy) > rsq) {
+            ++i;
+            continue;
+        }
+        if (p.kind == PickupKind::RedHeart) {
+            if (player_.hp_ >= player_.max_hp_) {
+                ++i;
+                continue;
+            }
+            player_.healHp(pickup::kRedHeartHealHp);
+        } else {
+            if (player_.mp_ >= player_.max_mp_) {
+                ++i;
+                continue;
+            }
+            player_.restoreMp(pickup::kBlueHeartHealMp);
+        }
+        pickups_[i] = pickups_.back();
+        pickups_.pop_back();
+    }
+}
+
+void World::setPlayerDamageScoreBrackets(const PlayerDamageScoreBrackets& b) {
+    player_damage_brackets_ = b;
+    if (player_damage_brackets_.tier2_score <= player_damage_brackets_.tier1_score) {
+        player_damage_brackets_ = PlayerDamageScoreBrackets{};
+    }
+    player_damage_brackets_.tier1_mult = std::max(1.f, player_damage_brackets_.tier1_mult);
+    player_damage_brackets_.tier2_mult = std::max(1.f, player_damage_brackets_.tier2_mult);
+}
+
+float World::playerOutgoingDamageMultiplier() const {
+    const int s = score_.totalScore();
+    if (s > player_damage_brackets_.tier2_score) {
+        return player_damage_brackets_.tier2_mult;
+    }
+    if (s > player_damage_brackets_.tier1_score) {
+        return player_damage_brackets_.tier1_mult;
+    }
+    return 1.f;
+}
+
+void World::onBossDamagedByPlayer(int scaled_hp_lost) {
+    if (scaled_hp_lost > 0) {
+        score_.addBossChipScore(scaled_hp_lost);
+    }
+}
+
+void World::devKillAllEnemies() {
+    for (auto& e : enemies_) {
+        if (!e || e->hp() <= 0) {
+            continue;
+        }
+        e->applyDamage(e->maxHp() + e->maxHp() + 50, this);
+    }
 }
 
 void World::pushCombatVfx(CombatVfxKind kind, float wx, float wy) {
@@ -421,9 +543,32 @@ void World::evaluateBattleOutcome() {
             break;
         }
     }
-    if (!any) {
+    if (!any && boss_released_) {
         outcome_ = BattleOutcome::Victory;
     }
+}
+
+int World::battleHudMobWave() const {
+    if (!boss_released_ && wave_intermission_rem_ > 0.0 &&
+        mob_wave_index_ < wave_combat::kMobWavesBeforeBoss) {
+        const int next = mob_wave_index_ + 1;
+        return std::min(next, wave_combat::kMobWavesBeforeBoss);
+    }
+    return mob_wave_index_;
+}
+
+int World::mobWavesTotal() const {
+    return wave_combat::kMobWavesBeforeBoss;
+}
+
+int World::enemiesAliveCount() const {
+    int n = 0;
+    for (const auto& e : enemies_) {
+        if (e && e->hp() > 0) {
+            ++n;
+        }
+    }
+    return n;
 }
 
 } // namespace domain

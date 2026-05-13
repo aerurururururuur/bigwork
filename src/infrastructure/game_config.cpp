@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <fstream>
 #include <string>
 
@@ -62,7 +63,21 @@ std::optional<std::filesystem::path> resolveAssetFile(const std::filesystem::pat
     return std::nullopt;
 }
 
-RunMode parseRunMode(std::string val) {
+} // namespace
+
+static void normalizePlayerDamageTiers(GameConfig& cfg) {
+    if (cfg.player_damage_score_tier2 <= cfg.player_damage_score_tier1) {
+        cfg.player_damage_score_tier1 = 100;
+        cfg.player_damage_mult_tier1 = 1.2f;
+        cfg.player_damage_score_tier2 = 300;
+        cfg.player_damage_mult_tier2 = 1.5f;
+        return;
+    }
+    cfg.player_damage_mult_tier1 = std::max(1.f, cfg.player_damage_mult_tier1);
+    cfg.player_damage_mult_tier2 = std::max(1.f, cfg.player_damage_mult_tier2);
+}
+
+static RunMode parseRunMode(std::string val) {
     for (char& c : val) {
         c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
     }
@@ -71,8 +86,6 @@ RunMode parseRunMode(std::string val) {
     }
     return RunMode::Production;
 }
-
-} // namespace
 
 GameConfig loadGameConfigFromIni(const std::filesystem::path& path) {
     GameConfig cfg;
@@ -109,8 +122,29 @@ GameConfig loadGameConfigFromIni(const std::filesystem::path& path) {
             }
         } else if (key == "run_mode" && !val.empty()) {
             cfg.run_mode = parseRunMode(val);
+        } else if (key == "player_damage_score_tier1" && !val.empty()) {
+            try {
+                cfg.player_damage_score_tier1 = std::stoi(val);
+            } catch (...) {
+            }
+        } else if (key == "player_damage_mult_tier1" && !val.empty()) {
+            try {
+                cfg.player_damage_mult_tier1 = static_cast<float>(std::stod(val));
+            } catch (...) {
+            }
+        } else if (key == "player_damage_score_tier2" && !val.empty()) {
+            try {
+                cfg.player_damage_score_tier2 = std::stoi(val);
+            } catch (...) {
+            }
+        } else if (key == "player_damage_mult_tier2" && !val.empty()) {
+            try {
+                cfg.player_damage_mult_tier2 = static_cast<float>(std::stod(val));
+            } catch (...) {
+            }
         }
     }
+    normalizePlayerDamageTiers(cfg);
     return cfg;
 }
 

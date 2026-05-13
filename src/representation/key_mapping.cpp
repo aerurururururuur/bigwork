@@ -32,6 +32,12 @@ std::vector<application::GameCommand> mapRawInput(const domain::RawInputSnapshot
     if (raw.skill_q) {
         out.push_back(application::GameCommand::SkillQ);
     }
+    if (raw.skill_e) {
+        out.push_back(application::GameCommand::SkillE);
+    }
+    if (raw.toggle_player_character) {
+        out.push_back(application::GameCommand::SwapPlayerCharacter);
+    }
     if (out.empty()) {
         out.push_back(application::GameCommand::None);
     }

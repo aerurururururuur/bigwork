@@ -3,6 +3,7 @@
 #include "domain/vec2.hpp"
 #include "domain/world.hpp"
 
+#include <algorithm>
 #include <cmath>
 
 namespace domain {
@@ -118,6 +119,30 @@ void boss_pattern_spawn_soft_scatter(World& world, float cx, float cy, float aim
         world.spawnEnemyBulletSoftHoming(cx + bx * muzzle_dist, cy + by * muzzle_dist, bx * bullet_speed,
                                          by * bullet_speed, damage, EnemyBulletSprite::PebblinRock, straight_sec,
                                          max_turn_rad_per_sec);
+    }
+}
+
+void boss_pattern_spawn_wall_volley(World& world, float player_x, float boss_x, int playfield_width_cells,
+                                    int playfield_height_cells, int bullet_count, float bullet_speed,
+                                    float wall_inset, float y_margin, int damage, EnemyBulletSprite sprite) {
+    if (bullet_count <= 0 || playfield_width_cells <= 0 || playfield_height_cells <= 0) {
+        return;
+    }
+    const float wf = static_cast<float>(playfield_width_cells);
+    const float hf = static_cast<float>(playfield_height_cells);
+    const float y0 = std::max(wall_inset, y_margin);
+    const float y1 = std::min(hf - wall_inset, hf - y_margin);
+    if (y1 <= y0 + 1e-4f) {
+        return;
+    }
+    const bool from_left = (player_x >= boss_x);
+    const float spawn_x = from_left ? wall_inset : (wf - wall_inset);
+    const float vx = from_left ? bullet_speed : -bullet_speed;
+    for (int i = 0; i < bullet_count; ++i) {
+        const float t =
+            (bullet_count <= 1) ? 0.5f : static_cast<float>(i) / static_cast<float>(bullet_count - 1);
+        const float y = y0 + t * (y1 - y0);
+        world.spawnEnemyBullet(spawn_x, y, vx, 0.f, damage, sprite);
     }
 }
 

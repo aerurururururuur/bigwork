@@ -34,6 +34,13 @@ inline constexpr float kFeetToCenterWorld = 0.38f;
 inline constexpr float kMuzzleOffsetWorld = 0.06f;
 } // namespace player_shot
 
+/** Playable skin; affects representation + player bullet visual id (see `playerBulletVisualForCharacter`). */
+enum class PlayerCharacterId : std::uint8_t { Role1 = 0, Role2 = 1 };
+
+inline std::uint8_t playerBulletVisualForCharacter(PlayerCharacterId c) noexcept {
+    return c == PlayerCharacterId::Role2 ? static_cast<std::uint8_t>(1) : static_cast<std::uint8_t>(0);
+}
+
 struct PlayerIntent {
     int move_dx{0};
     int move_dy{0};
@@ -44,6 +51,8 @@ struct PlayerIntent {
     float aim_ny{0.f};
     /** Edge-triggered skill (Q); consumed same frame by `PlayerActor::step`. */
     bool skill_q{false};
+    /** Edge-triggered narrow fan (E); slot 1 CD in `PlayerActor::step`. */
+    bool skill_e{false};
 };
 
 /** Dynamic entities (player, foes, shots) share this extension root. */
@@ -72,10 +81,17 @@ public:
     double bulletInvulnRemaining() const { return bullet_invuln_rem_; }
     int shotDamage() const { return damage_; }
 
+    PlayerCharacterId characterId() const noexcept { return character_id_; }
+
     double skillAnimRemaining() const { return skill_anim_rem_; }
     double skillAnimTotal() const { return skill_anim_total_; }
 
     void resetSkillState();
+
+    /** Clamp to max_hp_. */
+    void healHp(int delta);
+    /** Clamp to max_mp_. */
+    void restoreMp(int delta);
 
 private:
     friend class World;
@@ -102,6 +118,7 @@ private:
     std::array<double, kSkillSlotCount> skill_slot_cd_{};
     double skill_anim_rem_{0.0};
     double skill_anim_total_{0.0};
+    PlayerCharacterId character_id_{PlayerCharacterId::Role1};
 };
 
 class IEnemyBehavior;
@@ -121,6 +138,10 @@ public:
     float lastAnimVx() const { return last_anim_vx_; }
     float lastAnimVy() const { return last_anim_vy_; }
     void applyDamage(int amount, World* world);
+
+    /** Multiplier for incoming damage from player bullets (1 = default). Used e.g. Boss spell vulnerability. */
+    float incomingDamageMultiplier() const { return incoming_damage_multiplier_; }
+    void setIncomingDamageMultiplier(float m) { incoming_damage_multiplier_ = std::max(0.f, m); }
 
     /** Called when placing an enemy in the room (sets archetype + stats + AI). */
     void resetForSpawn(EnemyArchetype a, EnemySpriteId sprite_id);
@@ -148,6 +169,7 @@ private:
     double enemy_fire_cool_{0.0};
     double enemy_fire_period_{0.85};
     std::unique_ptr<IEnemyBehavior> behavior_;
+    float incoming_damage_multiplier_{1.f};
 };
 
 /** Base bullet: movement, terrain, hit policy; subclasses only fix faction / policy wiring. */
@@ -165,6 +187,8 @@ public:
     virtual BulletFaction faction() const noexcept = 0;
     /** Non-zero only for enemy bullets; used by Application snapshot (no RTTI). */
     virtual std::uint8_t enemyBulletVisual() const noexcept { return 0; }
+    /** Non-zero for player bullets with alternate art (e.g. Role2 book). */
+    virtual std::uint8_t playerBulletVisual() const noexcept { return 0; }
 
 protected:
     BulletActor(float x, float y, float vx, float vy, int damage, std::unique_ptr<IBulletHitPolicy> policy);
@@ -186,8 +210,20 @@ protected:
 
 class PlayerBulletActor final : public BulletActor {
 public:
-    PlayerBulletActor(float x, float y, float vx, float vy, int damage);
+    /** @param max_travel_sq if `<= 0`, no max-range limit (Boss phase / tests). */
+    PlayerBulletActor(float x, float y, float vx, float vy, int damage, float max_travel_sq = -1.f,
+                      std::uint8_t player_bullet_visual = 0);
     BulletFaction faction() const noexcept override { return BulletFaction::Player; }
+    std::uint8_t playerBulletVisual() const noexcept override { return player_bullet_visual_; }
+
+protected:
+    void integratePosition(World& world, float dt_sec) override;
+
+private:
+    float spawn_x_{0.f};
+    float spawn_y_{0.f};
+    float max_travel_sq_{-1.f};
+    std::uint8_t player_bullet_visual_{0};
 };
 
 class EnemyBulletActor final : public BulletActor {

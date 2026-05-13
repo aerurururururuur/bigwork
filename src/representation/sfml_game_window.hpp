@@ -6,6 +6,7 @@
 #include "representation/combat_vfx_particles.hpp"
 #include "representation/enemy_visual_resources.hpp"
 #include "representation/movement_particles.hpp"
+#include "representation/player_role2_resources.hpp"
 #include "representation/player_sprite_animator.hpp"
 #include "representation/sprite_sheet_config.hpp"
 
@@ -47,6 +48,7 @@ private:
     void drawEnemies(const application::RenderSnapshot& snap);
     void drawBullets(const application::RenderSnapshot& snap);
     void drawPlayer(const application::RenderSnapshot& snap, double dt);
+    void drawPickups(const application::RenderSnapshot& snap);
     void drawBattleHud(const application::RenderSnapshot& snap);
 
     MovementParticleSystem movement_particles_;
@@ -70,6 +72,9 @@ private:
     sf::Sprite player_sprite_{};
     PlayerSpriteAnimator player_anim_{};
     bool player_sprite_ready_{false};
+    PlayerRole2Resources role2_resources_{};
+    sf::Texture player_book_bullet_tex_{};
+    bool player_book_bullet_ready_{false};
 
     EnemyVisualResources enemy_visuals_;
     sf::Sprite enemy_draw_sprite_{};

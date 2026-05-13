@@ -2,6 +2,8 @@
 
 #include "domain/enemy_bullet_sprite.hpp"
 
+#include <cstdint>
+
 namespace domain {
 
 class EnemyActor;
@@ -11,7 +13,8 @@ class World;
 class IBulletFirePort {
 public:
     virtual ~IBulletFirePort() = default;
-    virtual void spawnPlayerBullet(float x, float y, float vx, float vy, int damage) = 0;
+    virtual void spawnPlayerBullet(float x, float y, float vx, float vy, int damage,
+                                   std::uint8_t player_bullet_visual = 0) = 0;
     virtual void spawnEnemyBullet(float x, float y, float vx, float vy, int damage,
                                    EnemyBulletSprite sprite = EnemyBulletSprite::Generic) = 0;
 };

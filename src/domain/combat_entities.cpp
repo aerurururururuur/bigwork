@@ -4,6 +4,7 @@
 #include "domain/enemy_behavior.hpp"
 #include "domain/skill.hpp"
 #include "domain/vec2.hpp"
+#include "domain/wave_combat_tuning.hpp"
 #include "domain/world.hpp"
 
 #include <algorithm>
@@ -25,8 +26,24 @@ BulletActor::BulletActor(float x, float y, float vx, float vy, int damage,
 
 BulletActor::~BulletActor() = default;
 
-PlayerBulletActor::PlayerBulletActor(float x, float y, float vx, float vy, int damage)
-    : BulletActor(x, y, vx, vy, damage, makeBulletHitPolicy(BulletFaction::Player)) {}
+PlayerBulletActor::PlayerBulletActor(float x, float y, float vx, float vy, int damage, float max_travel_sq,
+                                     std::uint8_t player_bullet_visual)
+    : BulletActor(x, y, vx, vy, damage, makeBulletHitPolicy(BulletFaction::Player)),
+      spawn_x_(x),
+      spawn_y_(y),
+      max_travel_sq_(max_travel_sq),
+      player_bullet_visual_(player_bullet_visual) {}
+
+void PlayerBulletActor::integratePosition(World& world, float fdt) {
+    BulletActor::integratePosition(world, fdt);
+    if (max_travel_sq_ > 0.f) {
+        const float dx = x_ - spawn_x_;
+        const float dy = y_ - spawn_y_;
+        if (lengthSq(dx, dy) > max_travel_sq_) {
+            dead_ = true;
+        }
+    }
+}
 
 EnemyBulletActor::EnemyBulletActor(float x, float y, float vx, float vy, int damage, EnemyBulletSprite sprite,
                                    double soft_homing_straight_sec, float max_turn_rad_per_sec)
@@ -49,6 +66,20 @@ void PlayerActor::resetSkillState() {
     skill_slot_cd_.fill(0.0);
     skill_anim_rem_ = 0.0;
     skill_anim_total_ = 0.0;
+}
+
+void PlayerActor::healHp(int delta) {
+    if (delta <= 0) {
+        return;
+    }
+    hp_ = std::min(max_hp_, hp_ + delta);
+}
+
+void PlayerActor::restoreMp(int delta) {
+    if (delta <= 0) {
+        return;
+    }
+    mp_ = std::min(max_mp_, mp_ + delta);
 }
 
 void PlayerActor::step(World& world, double dt) {
@@ -112,7 +143,11 @@ void PlayerActor::step(World& world, double dt) {
         const float cy = y_ - player_shot::kFeetToCenterWorld;
         const float ox = cx + bx * player_shot::kMuzzleOffsetWorld;
         const float oy = cy + by * player_shot::kMuzzleOffsetWorld;
-        world.spawnPlayerBullet(ox, oy, bx * player_shot::kBulletSpeed, by * player_shot::kBulletSpeed, damage_);
+        const double mult = static_cast<double>(world.playerOutgoingDamageMultiplier());
+        const int out_dmg =
+            std::max(1, static_cast<int>(std::lround(static_cast<double>(damage_) * mult)));
+        world.spawnPlayerBullet(ox, oy, bx * player_shot::kBulletSpeed, by * player_shot::kBulletSpeed, out_dmg,
+                                playerBulletVisualForCharacter(character_id_));
         mp_ -= kPlayerFireMpCost;
         fire_cool_ = fire_period_;
     }
@@ -132,7 +167,45 @@ void PlayerActor::step(World& world, double dt) {
         if (mp_ >= sk.mpCost()) {
             mp_ -= sk.mpCost();
             skill_slot_cd_[0] += sk.cooldownSeconds();
-            SkillCastContext ctx{world, SkillCasterKind::Player, this, nullptr, x_, y_, damage_, 0};
+            const double sk_mult = static_cast<double>(world.playerOutgoingDamageMultiplier());
+            const int out_skill_dmg =
+                std::max(1, static_cast<int>(std::lround(static_cast<double>(damage_) * sk_mult)));
+            SkillCastContext ctx{world, SkillCasterKind::Player, this, nullptr, x_, y_, out_skill_dmg, 0};
+            sk.execute(ctx);
+            constexpr double kSkillAnimFps = 12.0;
+            constexpr int kSkillAnimFrames = 3;
+            skill_anim_total_ = static_cast<double>(kSkillAnimFrames) / kSkillAnimFps;
+            skill_anim_rem_ = skill_anim_total_;
+        }
+    }
+
+    if (in.skill_e && skill_slot_cd_[1] <= 0.0) {
+        const ISkill& sk = playerNarrowFanSkill();
+        if (mp_ >= sk.mpCost()) {
+            float ax = 0.f;
+            float ay = 0.f;
+            if (in.use_mouse_aim) {
+                ax = in.aim_nx;
+                ay = in.aim_ny;
+                normalizeOrDefault(ax, ay);
+            } else {
+                int dx = last_fire_dx_;
+                int dy = last_fire_dy_;
+                if (dx == 0 && dy == 0) {
+                    dx = 1;
+                }
+                ax = static_cast<float>(dx);
+                ay = static_cast<float>(dy);
+                normalizeOrDefault(ax, ay);
+            }
+            mp_ -= sk.mpCost();
+            skill_slot_cd_[1] += sk.cooldownSeconds();
+            const double sk_mult = static_cast<double>(world.playerOutgoingDamageMultiplier());
+            const int out_skill_dmg =
+                std::max(1, static_cast<int>(std::lround(static_cast<double>(damage_) * sk_mult)));
+            SkillCastContext ctx{world, SkillCasterKind::Player, this, nullptr, x_, y_, out_skill_dmg, 0};
+            ctx.player_skill_aim_nx = ax;
+            ctx.player_skill_aim_ny = ay;
             sk.execute(ctx);
             constexpr double kSkillAnimFps = 12.0;
             constexpr int kSkillAnimFrames = 3;
@@ -150,26 +223,27 @@ void EnemyActor::configureForArchetype(EnemyArchetype a) {
     archetype_ = a;
     behavior_ = makeEnemyBehavior(a);
     enemy_fire_cool_ = 0.0;
+    incoming_damage_multiplier_ = 1.f;
     switch (a) {
     case EnemyArchetype::Melee:
-        max_hp_ = hp_ = 5;
-        enemy_fire_period_ = 1.0;
+        max_hp_ = hp_ = wave_combat::kMobMeleeHp;
+        enemy_fire_period_ = wave_combat::kMobMeleeFirePeriod;
         break;
     case EnemyArchetype::Ranged:
-        max_hp_ = hp_ = 3;
-        enemy_fire_period_ = 0.82;
+        max_hp_ = hp_ = wave_combat::kMobRangedHp;
+        enemy_fire_period_ = wave_combat::kMobRangedFirePeriod;
         break;
     case EnemyArchetype::EliteHybrid:
-        max_hp_ = hp_ = 10;
-        enemy_fire_period_ = 0.55;
+        max_hp_ = hp_ = wave_combat::kMobEliteHp;
+        enemy_fire_period_ = wave_combat::kMobEliteFirePeriod;
         break;
     case EnemyArchetype::Boss:
-        max_hp_ = hp_ = 40;
-        enemy_fire_period_ = 0.45;
+        max_hp_ = hp_ = wave_combat::kMobBossHp;
+        enemy_fire_period_ = wave_combat::kMobBossFirePeriod;
         break;
     default:
-        max_hp_ = hp_ = 10;
-        enemy_fire_period_ = 0.55;
+        max_hp_ = hp_ = wave_combat::kMobEliteHp;
+        enemy_fire_period_ = wave_combat::kMobEliteFirePeriod;
         break;
     }
 }
@@ -183,9 +257,14 @@ void EnemyActor::applyDamage(int amount, World* world) {
     if (hp_ <= 0) {
         return;
     }
-    hp_ -= amount;
+    const int scaled =
+        std::max(1, static_cast<int>(std::lround(static_cast<double>(amount) * static_cast<double>(incoming_damage_multiplier_))));
+    hp_ -= scaled;
     if (hp_ < 0) {
         hp_ = 0;
+    }
+    if (world != nullptr && archetype_ == EnemyArchetype::Boss && scaled > 0) {
+        world->onBossDamagedByPlayer(scaled);
     }
     if (hp_ == 0 && world != nullptr) {
         world->notifyEnemyKilled(*this);
@@ -227,6 +306,9 @@ void BulletActor::integratePosition(World&, float dt_sec) {
 }
 
 void BulletActor::resolveBulletWorldAndHits(World& world) {
+    if (dead_) {
+        return;
+    }
     const int gx = static_cast<int>(std::floor(x_));
     const int gy = static_cast<int>(std::floor(y_));
     if (!world.playfield().inBounds(gx, gy)) {

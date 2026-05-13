@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cmath>
 #include <filesystem>
+#include <cstdio>
 #include <optional>
 #include <string>
 
@@ -147,6 +148,12 @@ SfmlGameWindow::SfmlGameWindow(int logical_cols, int logical_rows, int cell_px,
         }
     }
 
+    role2_resources_ = PlayerRole2Resources::load_from_file("assets/sprites/player_sheet_role2.json");
+    player_anim_.set_role2_resources(&role2_resources_);
+    if (player_book_bullet_tex_.loadFromFile("assets/sprites/bullets/Book.png")) {
+        player_book_bullet_ready_ = true;
+    }
+
     (void)enemy_visuals_.load_from_file("assets/sprites/enemy_visuals.json");
 
     if (background_image_path && !background_image_path->empty()) {
@@ -172,7 +179,7 @@ SfmlGameWindow::SfmlGameWindow(int logical_cols, int logical_rows, int cell_px,
 
 bool SfmlGameWindow::loadFont() {
     const std::vector<std::string> paths = {
-        "assets/fonts/DejaVuSansMono.ttf",
+        "assets/fonts/NotoSansSC-Black.ttf",
         "C:/Windows/Fonts/consola.ttf",
         "C:/Windows/Fonts/lucon.ttf",
     };
@@ -245,6 +252,13 @@ bool SfmlGameWindow::pollInput(domain::RawInputSnapshot& out, const application:
                 out.toggle_theme = true;
             } else if (event.key.code == sf::Keyboard::Q && !view.overlay.active) {
                 out.skill_q = true;
+            } else if (event.key.code == sf::Keyboard::E && !view.overlay.active) {
+                out.skill_e = true;
+            } else if (event.key.code == sf::Keyboard::Tab && !view.overlay.active) {
+                out.toggle_player_character = true;
+            } else if (enable_dev_boss_digit_keys_ && event.key.code == sf::Keyboard::X &&
+                       !view.overlay.active) {
+                out.dev_kill_all_enemies = true;
             } else if (enable_dev_boss_digit_keys_ && !view.overlay.active) {
                 const int slot = keyCodeToDevBossSkillSlot(event.key.code);
                 if (slot != 0 && out.dev_boss_skill_slot == 0) {
@@ -269,16 +283,16 @@ bool SfmlGameWindow::pollInput(domain::RawInputSnapshot& out, const application:
         }
     }
 
-    if (sf::Keyboard::isKeyPressed(sf::Keyboard::Up)) {
+    if (sf::Keyboard::isKeyPressed(sf::Keyboard::W)) {
         out.up = true;
     }
-    if (sf::Keyboard::isKeyPressed(sf::Keyboard::Down)) {
+    if (sf::Keyboard::isKeyPressed(sf::Keyboard::S)) {
         out.down = true;
     }
-    if (sf::Keyboard::isKeyPressed(sf::Keyboard::Left)) {
+    if (sf::Keyboard::isKeyPressed(sf::Keyboard::A)) {
         out.left = true;
     }
-    if (sf::Keyboard::isKeyPressed(sf::Keyboard::Right)) {
+    if (sf::Keyboard::isKeyPressed(sf::Keyboard::D)) {
         out.right = true;
     }
     // Do not poll Escape here: `isKeyPressed` is global; if Esc was already down when the
@@ -395,10 +409,21 @@ void SfmlGameWindow::drawPlayer(const application::RenderSnapshot& snap, double 
 
     player_anim_.update(dt, snap);
     if (player_sprite_ready_) {
-        player_anim_.apply_to_sprite(player_sprite_, player_texture_.getSize().x, player_texture_.getSize().y,
-                                     cell_px_, pr);
-        player_sprite_.setPosition(std::floor(px), std::floor(py + draw_dy));
-        window_.draw(player_sprite_);
+        const PlayerRole2Draw r2 = player_anim_.compute_role2_draw(snap, cell_px_, pr);
+        if (r2.ok) {
+            player_sprite_.setTexture(*r2.texture, true);
+            player_sprite_.setTextureRect(r2.rect);
+            player_sprite_.setScale(r2.scale_x, r2.scale_y);
+            player_sprite_.setOrigin(r2.origin_x, r2.origin_y);
+            player_sprite_.setPosition(std::floor(px), std::floor(py + draw_dy));
+            window_.draw(player_sprite_);
+        } else {
+            player_sprite_.setTexture(player_texture_, false);
+            player_anim_.apply_to_sprite(player_sprite_, player_texture_.getSize().x, player_texture_.getSize().y,
+                                         cell_px_, pr);
+            player_sprite_.setPosition(std::floor(px), std::floor(py + draw_dy));
+            window_.draw(player_sprite_);
+        }
     } else {
         actor_circle_.setRadius(pr);
         actor_circle_.setOrigin(pr, pr);
@@ -406,6 +431,30 @@ void SfmlGameWindow::drawPlayer(const application::RenderSnapshot& snap, double 
         actor_circle_.setFillColor(colorFromId(47));
         window_.draw(actor_circle_);
     }
+}
+
+void SfmlGameWindow::drawPickups(const application::RenderSnapshot& snap) {
+    const float cell = static_cast<float>(cell_px_);
+    constexpr std::uint8_t kKindBlue = 1;
+    const float pr = std::max(3.f, cell * 0.14f);
+    actor_circle_.setRadius(pr);
+    actor_circle_.setOrigin(pr, pr);
+    actor_circle_.setOutlineThickness(std::max(1.f, cell * 0.04f));
+
+    for (const auto& p : snap.pickups) {
+        const float px = p.world_x * cell;
+        const float py = (static_cast<float>(snap.sky_rows) + p.world_y) * cell;
+        actor_circle_.setPosition(std::floor(px), std::floor(py));
+        if (p.kind == kKindBlue) {
+            actor_circle_.setFillColor(sf::Color(90, 150, 235));
+            actor_circle_.setOutlineColor(sf::Color(200, 228, 255, 200));
+        } else {
+            actor_circle_.setFillColor(sf::Color(215, 58, 68));
+            actor_circle_.setOutlineColor(sf::Color(255, 200, 200, 200));
+        }
+        window_.draw(actor_circle_);
+    }
+    actor_circle_.setOutlineThickness(0.f);
 }
 
 void SfmlGameWindow::drawBullets(const application::RenderSnapshot& snap) {
@@ -437,6 +486,23 @@ void SfmlGameWindow::drawBullets(const application::RenderSnapshot& snap) {
             }
         }
 
+        if (!enemy && b.player_bullet_visual == 1 && player_book_bullet_ready_) {
+            const auto bsz = player_book_bullet_tex_.getSize();
+            if (bsz.y > 0u) {
+                enemy_draw_sprite_.setTexture(player_book_bullet_tex_, true);
+                const float tw = static_cast<float>(bsz.x);
+                const float th = static_cast<float>(bsz.y);
+                const float target = thick * 3.2f;
+                const float sc = target / th;
+                enemy_draw_sprite_.setScale(sc, sc);
+                enemy_draw_sprite_.setOrigin(tw * 0.5f, th * 0.5f);
+                enemy_draw_sprite_.setPosition(std::floor(px), std::floor(py));
+                enemy_draw_sprite_.setRotation(b.rotation_deg);
+                window_.draw(enemy_draw_sprite_);
+                continue;
+            }
+        }
+
         bullet_shape_.setSize(sf::Vector2f(len, thick));
         bullet_shape_.setOrigin(len * 0.5f, thick * 0.5f);
         bullet_shape_.setPosition(std::floor(px), std::floor(py));
@@ -454,7 +520,7 @@ void SfmlGameWindow::drawBullets(const application::RenderSnapshot& snap) {
 }
 
 void SfmlGameWindow::drawBattleHud(const application::RenderSnapshot& snap) {
-    if (!snap.gameplay_active) {
+    if (!snap.gameplay_active && !snap.overlay_modal_pause) {
         return;
     }
 
@@ -497,17 +563,49 @@ void SfmlGameWindow::drawBattleHud(const application::RenderSnapshot& snap) {
     overlay_text_.setCharacterSize(char_size);
     overlay_text_.setFillColor(sf::Color(238, 240, 248));
 
-    int mult = 1;
+    const float line_step = static_cast<float>(char_size) * 1.15f;
+    float text_y = kHudMargin;
+
+    std::string score_line = "Score: " + std::to_string(snap.score);
     if (snap.combo > 0) {
-        mult = std::min(8, 1 + snap.combo);
+        const int mult = std::min(8, 1 + snap.combo);
+        score_line += "  x" + std::to_string(mult);
     }
-    std::string line = "分数 " + std::to_string(snap.score);
-    if (snap.combo > 0) {
-        line += "  x" + std::to_string(mult);
-    }
-    overlay_text_.setString(line);
-    overlay_text_.setPosition(6.f, 4.f);
+    overlay_text_.setString(score_line);
+    overlay_text_.setPosition(std::floor(kHudMargin), std::floor(text_y));
     window_.draw(overlay_text_);
+    text_y += line_step;
+
+    char dmg_line[64];
+    std::snprintf(dmg_line, sizeof(dmg_line), "Damage: x%.2f",
+                  static_cast<double>(snap.player_outgoing_damage_mult));
+    overlay_text_.setString(dmg_line);
+    overlay_text_.setPosition(std::floor(kHudMargin), std::floor(text_y));
+    window_.draw(overlay_text_);
+    text_y += line_step;
+
+    char wave_line[72];
+    std::snprintf(wave_line, sizeof(wave_line), "Wave %d/%d", snap.battle_wave_index,
+                  std::max(1, snap.battle_mob_waves_total));
+    overlay_text_.setString(wave_line);
+    overlay_text_.setPosition(std::floor(kHudMargin), std::floor(text_y));
+    window_.draw(overlay_text_);
+    text_y += line_step;
+
+    char enemy_line[56];
+    std::snprintf(enemy_line, sizeof(enemy_line), "Enemies: %d", snap.enemies_alive_count);
+    overlay_text_.setString(enemy_line);
+    overlay_text_.setPosition(std::floor(kHudMargin), std::floor(text_y));
+    window_.draw(overlay_text_);
+    text_y += line_step;
+
+    if (snap.next_wave_countdown_sec >= 0.0) {
+        char next_line[56];
+        std::snprintf(next_line, sizeof(next_line), "Next: %.1fs", snap.next_wave_countdown_sec);
+        overlay_text_.setString(next_line);
+        overlay_text_.setPosition(std::floor(kHudMargin), std::floor(text_y));
+        window_.draw(overlay_text_);
+    }
 }
 
 void SfmlGameWindow::drawOverlay(const application::RenderSnapshot& snap) {
@@ -515,14 +613,10 @@ void SfmlGameWindow::drawOverlay(const application::RenderSnapshot& snap) {
         return;
     }
 
-    std::size_t max_len = 0;
-    for (const std::string& ln : snap.overlay.lines) {
-        max_len = std::max(max_len, ln.size());
-    }
-    const int box_w = static_cast<int>(max_len) + 4;
-    const int box_h = static_cast<int>(snap.overlay.lines.size()) + 2;
-    const int ox = std::max(0, (snap.total_cols - box_w) / 2);
-    const int oy = std::max(0, (snap.total_rows - box_h) / 2);
+    const int ox = snap.overlay.panel_w > 0 ? snap.overlay.panel_col : 0;
+    const int oy = snap.overlay.panel_h > 0 ? snap.overlay.panel_row : 0;
+    const int box_w = snap.overlay.panel_w > 0 ? snap.overlay.panel_w : 1;
+    const int box_h = snap.overlay.panel_h > 0 ? snap.overlay.panel_h : 1;
 
     const float px = static_cast<float>(ox * cell_px_);
     const float py = static_cast<float>(oy * cell_px_);
@@ -563,9 +657,18 @@ void SfmlGameWindow::drawOverlay(const application::RenderSnapshot& snap) {
     const float text_left = std::floor(px + static_cast<float>(cell_px_));
     float line_y = std::floor(py + static_cast<float>(cell_px_) + static_cast<float>(char_size) * 0.12f);
 
+    const bool bottom_bar = snap.overlay.placement == application::OverlayPlacement::BottomBar;
+    const std::size_t last_i =
+        snap.overlay.lines.empty() ? 0 : snap.overlay.lines.size() - 1;
+
     for (std::size_t li = 0; li < snap.overlay.lines.size(); ++li) {
         overlay_text_.setString(snap.overlay.lines[li]);
-        overlay_text_.setPosition(std::floor(text_left), std::floor(line_y));
+        float tx = std::floor(text_left);
+        if (bottom_bar && li == last_i) {
+            const float lw = overlay_text_.getLocalBounds().width;
+            tx = std::floor(px + pw - static_cast<float>(cell_px_) * 0.55f - lw);
+        }
+        overlay_text_.setPosition(tx, std::floor(line_y));
         window_.draw(overlay_text_);
         line_y += line_step;
     }
@@ -632,6 +735,7 @@ void SfmlGameWindow::present(int rows, int cols, const std::vector<domain::Frame
     drawEnemies(snap);
     drawBullets(snap);
     drawPlayer(snap, dt);
+    drawPickups(snap);
     drawBattleHud(snap);
     drawOverlay(snap);
     window_.display();

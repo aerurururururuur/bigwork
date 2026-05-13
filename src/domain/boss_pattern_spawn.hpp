@@ -46,4 +46,12 @@ void boss_pattern_spawn_soft_scatter(World& world, float cx, float cy, float aim
                                        float spread_half_rad, float bullet_speed, double straight_sec,
                                        float max_turn_rad_per_sec, float muzzle_dist, int damage);
 
+/**
+ * Horizontal enemy bullets from one vertical wall (y band), crossing the room.
+ * Spawns from left if `player_x >= boss_x`, else from right; `playfield_*` in world cells.
+ */
+void boss_pattern_spawn_wall_volley(World& world, float player_x, float boss_x, int playfield_width_cells,
+                                    int playfield_height_cells, int bullet_count, float bullet_speed,
+                                    float wall_inset, float y_margin, int damage, EnemyBulletSprite sprite);
+
 } // namespace domain

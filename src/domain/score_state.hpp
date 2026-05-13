@@ -30,6 +30,9 @@ public:
     void onEnemyKilled(EnemyArchetype t);
     void tick(double dt);
 
+    /** Boss only: add score from HP chipped by player bullets (no combo change). */
+    void addBossChipScore(int scaled_hp_lost);
+
 private:
     friend class IScoreRule;
     friend class TableScoreRule;

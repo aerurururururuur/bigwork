@@ -4,17 +4,22 @@
 #include "domain/combat_entities.hpp"
 #include "domain/enemy_bullet_sprite.hpp"
 #include "domain/vec2.hpp"
+#include "domain/wave_combat_tuning.hpp"
 #include "domain/world.hpp"
 
 #include <cmath>
+#include <cstdint>
 
 namespace domain {
 
 namespace {
 
 constexpr int kPlayerRingBulletCount = 28;
-/** Keep in sync with `enemy_behavior.cpp` ranged / elite enemy shots. */
-constexpr float kEnemyRingBulletSpeed = 9.0f;
+/** E-slot narrow fan: total arc ~45 deg, 8 shots. */
+constexpr int kPlayerNarrowFanBulletCount = 8;
+constexpr float kPlayerNarrowFanHalfWidthRad = 3.14159265358979323846f / 8.f;
+/** Keep in sync with `wave_combat_tuning.hpp` mob enemy ring / ranged shots. */
+constexpr float kEnemyRingBulletSpeed = wave_combat::kEnemyMobBulletSpeed;
 constexpr float kEnemyRingMuzzleOffset = 0.42f;
 
 constexpr int kBossDiffusionRing1Count = 12;
@@ -52,6 +57,12 @@ constexpr float kBossSoftScatterSpeed = 8.0f;
 constexpr double kBossSoftScatterStraightSec = 0.6;
 constexpr float kBossSoftScatterMaxTurnRps = 1.35f;
 
+/** Side wall horizontal volley. */
+constexpr int kBossWallVolleyBulletCount = 6;
+constexpr float kBossWallVolleySpeed = 8.0f;
+constexpr float kBossWallVolleyInset = 0.55f;
+constexpr float kBossWallVolleyYMargin = 1.15f;
+
 void spawnEnemyDiffusionRing(World& world, float cx, float cy, int n, float angle_offset_rad, float speed,
                              float muzzle, int damage, EnemyBulletSprite sprite) {
     for (int i = 0; i < n; ++i) {
@@ -78,6 +89,8 @@ void RingBurstSkill::execute(SkillCastContext& ctx) const {
     if (ctx.caster != SkillCasterKind::Player) {
         return;
     }
+    const std::uint8_t pbv =
+        ctx.player ? playerBulletVisualForCharacter(ctx.player->characterId()) : static_cast<std::uint8_t>(0);
     const float cx = ctx.player_foot_x;
     const float cy = ctx.player_foot_y - player_shot::kFeetToCenterWorld;
     for (int i = 0; i < kPlayerRingBulletCount; ++i) {
@@ -89,12 +102,52 @@ void RingBurstSkill::execute(SkillCastContext& ctx) const {
         const float ox = cx + bx * player_shot::kMuzzleOffsetWorld;
         const float oy = cy + by * player_shot::kMuzzleOffsetWorld;
         ctx.world.spawnPlayerBullet(ox, oy, bx * player_shot::kBulletSpeed, by * player_shot::kBulletSpeed,
-                                    ctx.bullet_damage);
+                                    ctx.bullet_damage, pbv);
     }
 }
 
 const ISkill& ringBurstSkill() {
     static const RingBurstSkill k{};
+    return k;
+}
+
+int NarrowFanSkill::mpCost() const {
+    return 7;
+}
+
+double NarrowFanSkill::cooldownSeconds() const {
+    return 3.0;
+}
+
+void NarrowFanSkill::execute(SkillCastContext& ctx) const {
+    if (ctx.caster != SkillCasterKind::Player) {
+        return;
+    }
+    const std::uint8_t pbv =
+        ctx.player ? playerBulletVisualForCharacter(ctx.player->characterId()) : static_cast<std::uint8_t>(0);
+    float ax = ctx.player_skill_aim_nx;
+    float ay = ctx.player_skill_aim_ny;
+    normalizeOrDefault(ax, ay);
+    const float base = std::atan2(ay, ax);
+    const float cx = ctx.player_foot_x;
+    const float cy = ctx.player_foot_y - player_shot::kFeetToCenterWorld;
+    for (int i = 0; i < kPlayerNarrowFanBulletCount; ++i) {
+        const float t = (kPlayerNarrowFanBulletCount <= 1)
+                            ? 0.5f
+                            : static_cast<float>(i) / static_cast<float>(kPlayerNarrowFanBulletCount - 1);
+        const float a = (base - kPlayerNarrowFanHalfWidthRad) + t * (2.f * kPlayerNarrowFanHalfWidthRad);
+        float bx = std::cos(a);
+        float by = std::sin(a);
+        normalizeOrDefault(bx, by);
+        const float ox = cx + bx * player_shot::kMuzzleOffsetWorld;
+        const float oy = cy + by * player_shot::kMuzzleOffsetWorld;
+        ctx.world.spawnPlayerBullet(ox, oy, bx * player_shot::kBulletSpeed, by * player_shot::kBulletSpeed,
+                                    ctx.bullet_damage, pbv);
+    }
+}
+
+const ISkill& playerNarrowFanSkill() {
+    static const NarrowFanSkill k{};
     return k;
 }
 
@@ -210,6 +263,19 @@ void bossSoftScatterFire(SkillCastContext& ctx) {
     boss_pattern_spawn_soft_scatter(ctx.world, cx, cy, aim, n, kBossSoftScatterSpreadHalfRad, kBossSoftScatterSpeed,
                                     kBossSoftScatterStraightSec, kBossSoftScatterMaxTurnRps, kEnemyRingMuzzleOffset,
                                     ctx.enemy_bullet_damage);
+}
+
+void bossSideWallVolleyFire(SkillCastContext& ctx) {
+    if (ctx.caster != SkillCasterKind::Boss || ctx.enemy == nullptr) {
+        return;
+    }
+    const float px = ctx.world.player().x();
+    const float bx = ctx.enemy->x();
+    const EnemyBulletSprite sprite = ctx.enemy->spriteId() == EnemySpriteId::Pebblin ? EnemyBulletSprite::PebblinRock
+                                                                                     : EnemyBulletSprite::Generic;
+    boss_pattern_spawn_wall_volley(ctx.world, px, bx, ctx.world.playfield().width(), ctx.world.playfield().height(),
+                                   kBossWallVolleyBulletCount, kBossWallVolleySpeed, kBossWallVolleyInset,
+                                   kBossWallVolleyYMargin, ctx.enemy_bullet_damage, sprite);
 }
 
 } // namespace domain

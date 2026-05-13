@@ -2,6 +2,17 @@
 
 #include <algorithm>
 
+/*
+ * Scoring (TableScoreRule):
+ * - On enemy kill: gain basePoints(archetype) * comboMultiplier, then combo++ and combo_timer reset.
+ *   Base: Melee 10, Ranged 18, EliteHybrid 35, Boss 80. comboMultiplier = clamp(1 + combo_before_kill, 1..8).
+ *   Combo window: kComboWindowSec (2.2s); when timer expires, combo resets to 0.
+ * - Boss chip damage (ScoreState::addBossChipScore): each point of actual HP lost to player bullets on the
+ *   Boss adds 1 to total_score only (no combo change). See World::onBossDamagedByPlayer.
+ * - Player outgoing damage vs total score: thresholds in game_config.ini (player_damage_score_tier1/2, mults);
+ *   computed in World::playerOutgoingDamageMultiplier (strictly greater than threshold uses higher tier).
+ */
+
 namespace domain {
 
 namespace {
@@ -65,6 +76,13 @@ void ScoreState::onEnemyKilled(EnemyArchetype t) {
 
 void ScoreState::tick(double dt) {
     rule_->tickDecay(*this, dt);
+}
+
+void ScoreState::addBossChipScore(int scaled_hp_lost) {
+    if (scaled_hp_lost <= 0) {
+        return;
+    }
+    total_score_ += scaled_hp_lost;
 }
 
 } // namespace domain

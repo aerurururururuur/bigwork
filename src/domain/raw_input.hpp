@@ -15,12 +15,18 @@ struct RawInputSnapshot {
     bool fire{false};
     /** Edge: Q skill (one frame). */
     bool skill_q{false};
+    /** Edge: E narrow-fan skill (one frame). */
+    bool skill_e{false};
     bool confirm{false};
     bool pointer_confirm{false};
     bool cancel{false};
     bool toggle_theme{false};
     /** Edge: development-only boss skill slot 1-9 (first key this frame). */
     int dev_boss_skill_slot{0};
+    /** Edge: development-only: kill all living enemies this frame (key X). */
+    bool dev_kill_all_enemies{false};
+    /** Edge: Tab - cycle player character skin (battle, no overlay). */
+    bool toggle_player_character{false};
 };
 
 } // namespace domain

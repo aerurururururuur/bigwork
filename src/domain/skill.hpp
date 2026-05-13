@@ -21,6 +21,9 @@ struct SkillCastContext {
     int bullet_damage{1};
     /** Boss ring burst damage (`BossRingBurstSkill`). */
     int enemy_bullet_damage{1};
+    /** Unit aim for player narrow-fan skill (world X right, Y down). */
+    float player_skill_aim_nx{1.f};
+    float player_skill_aim_ny{0.f};
 };
 
 /** Base skill: slot logic (MP / cooldown) is enforced by the caster; `execute` applies the effect. */
@@ -42,6 +45,16 @@ public:
 
 /** Singleton for the registered ring burst definition. */
 const ISkill& ringBurstSkill();
+
+/** E-slot: narrow fan of player bullets toward `player_skill_aim_*` (mouse or last move). */
+class NarrowFanSkill final : public ISkill {
+public:
+    int mpCost() const override;
+    double cooldownSeconds() const override;
+    void execute(SkillCastContext& ctx) const override;
+};
+
+const ISkill& playerNarrowFanSkill();
 
 /** Boss timed skill: ring of enemy bullets (no MP). */
 class BossRingBurstSkill final : public ISkill {
@@ -70,10 +83,13 @@ void bossCrossDualRingFire(SkillCastContext& ctx);
 /** 8-10 soft-homing rocks: straight then gentle turn toward player. */
 void bossSoftScatterFire(SkillCastContext& ctx);
 
+/** Horizontal volley from left or right playfield wall (non-homing). */
+void bossSideWallVolleyFire(SkillCastContext& ctx);
+
 /**
  * Number of boss patterns bound to development hotkeys 1..N (max key index 9).
  * Increase when adding new `boss*` fire functions and manual dispatch.
  */
-inline constexpr int kBossManualSkillHotkeyCount = 7;
+inline constexpr int kBossManualSkillHotkeyCount = 8;
 
 } // namespace domain
