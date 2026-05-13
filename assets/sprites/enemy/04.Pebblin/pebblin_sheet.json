@@ -1,0 +1,11 @@
+{
+  "texture": "assets/sprites/enemy/04.Pebblin/pebblin_atlas.png",
+  "columns": 4,
+  "rows": 2,
+  "scale_vs_disc": 2.35,
+  "clips": {
+    "idle": { "row": 0, "start_col": 0, "frame_count": 4, "fps": 8 },
+    "move": { "row": 0, "start_col": 0, "frame_count": 4, "fps": 10 },
+    "melee_attack": { "row": 1, "start_col": 0, "frame_count": 4, "fps": 12 }
+  }
+}

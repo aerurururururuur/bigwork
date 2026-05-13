@@ -8,7 +8,7 @@ std::vector<application::GameCommand> mapRawInput(const domain::RawInputSnapshot
         out.push_back(application::GameCommand::Quit);
         return out;
     }
-    if (raw.confirm) {
+    if (raw.confirm || raw.pointer_confirm) {
         out.push_back(application::GameCommand::Confirm);
     }
     if (raw.toggle_theme) {
@@ -25,6 +25,18 @@ std::vector<application::GameCommand> mapRawInput(const domain::RawInputSnapshot
     }
     if (raw.right) {
         out.push_back(application::GameCommand::MoveRight);
+    }
+    if (raw.fire) {
+        out.push_back(application::GameCommand::Fire);
+    }
+    if (raw.skill_q) {
+        out.push_back(application::GameCommand::SkillQ);
+    }
+    if (raw.skill_e) {
+        out.push_back(application::GameCommand::SkillE);
+    }
+    if (raw.toggle_player_character) {
+        out.push_back(application::GameCommand::SwapPlayerCharacter);
     }
     if (out.empty()) {
         out.push_back(application::GameCommand::None);

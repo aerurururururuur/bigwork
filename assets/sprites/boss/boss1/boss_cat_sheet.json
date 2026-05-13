@@ -1,0 +1,9 @@
+{
+  "scale_cells": 2.35,
+  "clips": {
+    "idle": { "texture": "assets/sprites/boss/boss1/cat_idle.png", "columns": 5, "rows": 1, "fps": 8 },
+    "run": { "texture": "assets/sprites/boss/boss1/cat_move.png", "columns": 24, "rows": 1, "fps": 12 },
+    "attack": { "texture": "assets/sprites/boss/boss1/cat_shooting.png", "columns": 39, "rows": 1, "fps": 14 },
+    "hurt": { "texture": "assets/sprites/boss/boss1/cat_hurt.png", "columns": 12, "rows": 1, "fps": 18, "loop": true }
+  }
+}

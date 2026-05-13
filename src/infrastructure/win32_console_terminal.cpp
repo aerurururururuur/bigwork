@@ -41,6 +41,10 @@ WORD mapColor(std::uint8_t id) {
         return fg_cyan;
     case 7:
         return fg_white | FOREGROUND_INTENSITY;
+    case 8:
+        return FOREGROUND_INTENSITY;
+    case 9:
+        return fg_blue | FOREGROUND_INTENSITY;
     case 13:
         return fg_blue | FOREGROUND_INTENSITY;
     case 14:

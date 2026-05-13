@@ -1,0 +1,10 @@
+{
+  "texture": "assets/sprites/enemy/03.Spookmoth/spookmoth_atlas.png",
+  "columns": 4,
+  "rows": 1,
+  "scale_vs_disc": 2.4,
+  "clips": {
+    "idle": { "row": 0, "start_col": 0, "frame_count": 4, "fps": 9 },
+    "move": { "row": 0, "start_col": 0, "frame_count": 4, "fps": 9 }
+  }
+}

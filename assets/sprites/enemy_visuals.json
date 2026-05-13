@@ -1,0 +1,9 @@
+{
+  "enemy_bullet_pebblin_rock": "assets/sprites/enemy/04.Pebblin/RockAttack.png",
+  "entries": [
+    { "id": 0, "sheet": "assets/sprites/enemy/01.Slime/slime_sheet.json" },
+    { "id": 1, "sheet": "assets/sprites/enemy/02.BugBit/bugbit_sheet.json" },
+    { "id": 2, "sheet": "assets/sprites/enemy/03.Spookmoth/spookmoth_sheet.json" },
+    { "id": 3, "sheet": "assets/sprites/enemy/04.Pebblin/pebblin_sheet.json" }
+  ]
+}

@@ -2,13 +2,16 @@
 
 namespace domain {
 
-/** Logical console grid; 16:9 style composition (character cells, not square pixels). */
+/** Full-screen logical room (each cell maps to one SFML tile). */
 struct ScreenLayout {
     static constexpr int kRows = 27;
     static constexpr int kCols = 48;
-    static constexpr float kPlayfieldFraction = 0.25f;
+    /** 1.0 => entire grid is the combat playfield (no sky strip). */
+    static constexpr float kPlayfieldFraction = 1.0f;
 
-    static constexpr int playfieldRows() { return kRows / 4; }
+    static constexpr int playfieldRows() {
+        return static_cast<int>(static_cast<float>(kRows) * kPlayfieldFraction);
+    }
     static constexpr int skyRows() { return kRows - playfieldRows(); }
 };
 

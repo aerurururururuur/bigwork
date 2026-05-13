@@ -1,0 +1,10 @@
+{
+  "texture": "assets/sprites/enemy/01.Slime/slime_atlas.png",
+  "columns": 3,
+  "rows": 2,
+  "scale_vs_disc": 2.3,
+  "clips": {
+    "idle": { "row": 0, "start_col": 0, "frame_count": 3, "fps": 8 },
+    "move": { "row": 1, "start_col": 0, "frame_count": 3, "fps": 10 }
+  }
+}

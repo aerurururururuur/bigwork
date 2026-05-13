@@ -1,17 +1,56 @@
 ---
 name: roadside-stroll-cpp-architecture
 description: >-
-  Guides C++ console character-pixel work for «沿途公路信步»: four-layer
-  architecture, DTO boundaries, IRandom/Seed, FrameTimer FPS+deltaTime,
-  non-blocking KeyboardRawListen, CharPixel symbol+color_attr in Representation.
-  Skills: ConsoleDriver, FrameTimer, KeyboardRawListen, RandomUtil, MapGridRule,
-  GameStateMachine, GameMainLoop, ViewSnapshotAssemble, SceneLayerRender,
-  ParallaxScroll, ThemeStyleRender, etc. Use for refactor, CMake, or 沿途公路信步.
+  Guides C++ pixel top-down combat MVP: four-layer architecture, DTO boundaries,
+  IRandom/Seed, FrameTimer FPS+deltaTime, non-blocking input. Domain: TileBase,
+  CombatEntity, World, IEnemyBehavior + combat ports. Application: RenderSnapshot
+  only to Rep. Representation: FrameComposer (tiles), data-driven JSON sprites
+  (SpriteSheetConfig / PlayerSpriteAnimator; enemy atlas same pattern:
+  per-species sheet JSON + setTextureRect per frame), SFML present order.
+  Win32: SFML Audio needs OpenAL32.dll next to exe (CMake POST_BUILD). Continuous
+  actor coords + grid walkable. Legacy console ITerminal optional.
 ---
 
-# 《沿途公路信步》控制台工程架构
+# 俯视角像素战斗（仓库沿用 skill 路径）
 
-基于项目计划的四向分层与画面规范；实现或审查代码时**优先遵守本节依赖与目录约定**。
+实现或审查代码时**优先遵守本节依赖与目录约定**。产品形态为 **单房间俯视角射击 MVP**：标题 → 战斗 → 胜利/失败 → 标题；**Representation 只读 `RenderSnapshot`**。战斗中 **瞄准方向由 Application 根据鼠标与格宽合成单位向量写入 `PlayerIntent`**，子弹朝向由快照中的 `rotation_deg` 在 SFML 层旋转绘制。
+
+## 领域可扩展类型（基类体系）
+
+- **`TileBase`**（`src/domain/tile_base.hpp`）：地板 / 墙 / 障碍等**地形语义**的公共根；具体类 `FloorTile`、`WallTile`、`ObstacleTile`；`PlayfieldGrid` 存 `TileKind` 枚举并通过 `tilePrototype(TileKind)` 解析为只读 `TileBase&`（便于新增瓦片子类而不改网格存储）。
+- **`CombatEntity`**（`src/domain/combat_entities.hpp`）：**玩家 / 敌人 / 子弹** 等动态体的公共根；具体类 `PlayerActor`、`EnemyActor`、`BulletActor`；`World::simulateStep` 统一调度 `step(World&, double dt)`，新实体类型通过**继承 `CombatEntity`** 接入同一套步进与碰撞扩展点。
+- **`IEnemyBehavior` + `makeEnemyBehavior`**（`src/domain/enemy_behavior.*`）：敌人 AI **策略对象**，按 `EnemyArchetype` 装配；与 `World` 的 **`IBulletFirePort` / `IMeleeEngagePort`**（`combat_ports.hpp`）组合注入，避免在行为里硬编码 `World` 细节，便于单测与换 AI。
+- **`BulletActor` 体系**：`PlayerBulletActor` / `EnemyBulletActor` 共享弹道步进，命中策略由 `IBulletHitPolicy`（`bullet_hit_policy.*`）分派系解耦。
+
+## 高解耦与可复用模板（优先复用）
+
+以下模式已在仓库落地或推荐沿用；**换美术资源时优先改 JSON / 配置路径，少改 C++**。
+
+### 数据驱动精灵（Representation）
+
+| 组件 | 路径 | 职责 |
+|------|------|------|
+| **`SpriteSheetConfig`** | `representation/sprite_sheet_config.*` | 从 **`assets/sprites/player_sheet.json`** 解析图集：`texture`、`columns`、`rows`、`scale_cells`、`clips`（idle/run/death 段列表）。失败则 `valid == false`，调用方回退占位图。 |
+| **`PlayerSpriteAnimator`** | `representation/player_sprite_animator.*` | **只读 `RenderSnapshot`**：idle/run/death 状态机、`texture_rect`、`apply_to_sprite`（脚底原点、与敌圆直径下限 `2*pr` 取 max、可选全局倍率、水平翻转由 `player_vx`）。**不写死行列**：换角改 JSON。 |
+| **`EnemyVisualResources` + 敌人图集** | `representation/enemy_visual_resources.*`、`assets/sprites/enemy_visuals.json` | 敌人贴图**与主角同构**：**一张合成 PNG + 网格切帧**，禁止把整张 atlas 当一帧缩放显示。索引表 + 每物种 `*_sheet.json`（`texture`、`columns`、`rows`、`clips.idle` / `move`、可选 `melee_attack`；字段语义对齐 `player_sheet` 的扁平 clip：`row`、`start_col`、`frame_count`、`fps`）。绘制用 `sf::Sprite::setTextureRect`，缩放以**当前帧**宽高为基准；动画时间可在 `SfmlGameWindow` 内按物种累加 `dt`（或后续用快照字段做相位偏移）。失败回退色块圆点。 |
+| **`SfmlGameWindow`** | `representation/sfml_game_window.*` | 构造期加载配置与纹理；`drawPlayer` 内 `update(dt,snap)` 再绘制；`drawEnemies` 按 `EnemyView`（`sprite_id`、`anim_vx/y`、近战阈值）选 clip 并切帧；失败回退 `CircleShape`。 |
+
+**可复用要点**：敌人与主角共用 **`SpriteLinearClip` / `SpriteFrameCell` + 网格 `texture_rect`** 思路；解析可 **抽取/复用** `sprite_sheet_config.cpp` 中的 `append_row_strip`、`parse_int_field` 等，或单独 `enemy_sheet_config.*` 调用同一套子解析，避免复制 regex。顶层 **`enemy_visuals.json`** 保留 **`enemy_bullet_pebblin_rock`** 等非条带资源路径即可。避免为 MVP 引入重型 JSON 库。
+
+### 连续坐标 vs 网格权威
+
+- **Domain**：玩家 / 敌人 / 子弹用 **浮点世界单位**（格宽 1.0）；**可走性、撞墙** 仍由 **`PlayfieldGrid::walkable`** + 圆采样（`World::terrainCircleWalkable` 等）判定。
+- **Application**：`RenderSnapshot` 提供 `player_world_*`、`player_vx/vy`、`EnemyView` 浮点坐标等 **只读 DTO**；不重复积分物理。
+- **Representation**：逻辑像素 = 世界坐标 × `cell_px`；**勿**在 Rep 里改 Domain 状态。
+
+### 职业（AI）与外观（物种）分离（推荐）
+
+- **`EnemyArchetype`**：近战 / 远程 / 精英混合等 **规则与数值**（`configureForArchetype`、分数等）。
+- **物种 / 皮肤 ID**（若引入 `EnemySpriteId` 等）：**仅影响显示与资源路径**，与 `EnemyArchetype` **正交**；刷怪表 `(sprite_id → archetype)` 写在 Domain 或数据文件，避免用「职业枚举」硬编码贴图文件夹名。
+
+### 可选运行时配置
+
+- 仓库根提供 **`game_config.example.ini`**：可复制为 `game_config.ini` 置于工作目录（如 `build/Debug`），用于背景图等 **非核心玩法** 配置；**核心战斗随机与关卡权威仍在 Domain**。
 
 ## AI Agent Skills 列表（按四层归类）
 
@@ -21,84 +60,74 @@ description: >-
 
 | Skill | 职责 |
 |-------|------|
-| **ConsoleDriver** | 控制台底层驱动：清屏、光标隐藏、光标坐标定位；控制台文字颜色 / 主题色调底层配置（与 ThemeStyleRender 分工：此处为终端 API/ANSI，主题为表现层常量与绘制策略）。 |
-| **FrameTimer** | 高精度帧计时：**稳定 FPS**（如 30 / 60），避免 `while(true)` 空转**占满 CPU**；每帧向 **Application**（或主循环编排层）提供 **`deltaTime`**，供视差滚动平滑位移、节奏型动画与逻辑积分。实现常用 `sleep_until`/单调时钟差分；若需可抽象为 **`IClock`/`IFramePhase`** 由 Domain 仅见接口、Infra 实现。 |
-| **KeyboardRawListen** | 原生键盘**非阻塞**监听（**强制**）：原始码上下左右、确认、取消、日志快捷键。**禁止**把主循环建立在会**挂起线程**的 `getch()` / 默认阻塞 `cin>>` 上——否则无法稳定帧、也谈不上「实时行走」。**Win32**：`_kbhit()`、`GetAsyncKeyState` 等；**Unix**：`termios` 非规范模式 + `select`/轮询等。该实现选择直接决定体验是**伪实时行走**还是退化为**回合式**；代码归属 **Infrastructure**。语义键仍由 **KeyMappingTransform**（Rep）产出 `GameCommand`。 |
-| **RandomUtil** | **Infrastructure** 内具体 RNG / 哈希流等**实现**；领域通过 Domain 端口 **`IRandom`** 取数（见下节 **Seed**）。不得把「可复现性」完全 opaque 在 Infra：地图/会话种子等由 **Domain 的 `Seed` 值对象**显式建模，便于**确定性单测**与跑档复现。 |
-| **FilePersistence** | 落盘存档：旅途日志读写、任务进度保存、NPC 相遇记录持久化（仅 I/O 与序列化，不写业务规则）。 |
-| **AssetPathConfig** | 资源路径配置：文案库、对话库、场景模板路径加载与解析入口。 |
-| **BgmCtrl** | 背景音乐 / 氛围音：启停、切换「公路晚风」等氛围音（实现体在 Infra；若存在 `IBgmPlayer` 端口则 Domain/App 只依赖抽象）。 |
+| **ConsoleDriver** | 控制台底层驱动（可选）：清屏、光标、ANSI/Win32。主路径为 **SFML** 时可弱化。 |
+| **FrameTimer** | 帧计时：**稳定 FPS**；每帧提供 **`deltaTime`** 给 Application / Domain 步进（移动冷却、子弹积分等）。 |
+| **KeyboardRawListen** | **非阻塞** 原始输入（SFML 路径下在 `SfmlGameWindow::pollInput` 聚合 `RawInputSnapshot`）。禁止阻塞 `getch()` 主循环。 |
+| **RandomUtil** | `StdRandom` 等实现；领域只依赖端口 **`IRandom`**。 |
+| **FileAuditSink** | 审计落盘（缓冲策略在实现内，避免卡帧）。 |
+| **BgmCtrl** | 可选 BGM / 音效；经端口或 Infra 直调，**不**阻塞 `tick`。链接 **SFML Audio** 时进程会加载 **OpenAL32.dll**：Windows 下须在 **exe 同目录** 部署（例如 CMake POST_BUILD 从 SFML 源码树 `extlibs/bin/x64|x86/openal32.dll` 复制），否则启动即系统弹窗缺 DLL。 |
 
-### RandomUtil、`IRandom` 与 `Seed`（分层细节）
+### RandomUtil、`IRandom` 与 `Seed`
 
-- **`IRandom`**：**接口声明于 Domain**（端口）；算法、熵源、平台细节**零**放在 Domain。
-- **`RandomUtil`**：**实现于 Infrastructure**，注入为 `IRandom` 的具体适配器。
-- **`Seed`**：**Domain** 内简单**值对象/实体**（如地图种子、会话种子、跑档种子），由用例或 `World` 构造显式持有并传入规则；单测固定 `Seed` + Fake `IRandom` 即可对生成/游荡/场景块等做**稳定断言**。玩法随机仍**只经 `IRandom`**，不绕过端口。
+- **`IRandom`**：声明于 **Domain**；实现于 **Infrastructure**。
+- **`Seed`**：Domain 值对象；与 `IRandom` 组合保证可复现生成（障碍散布、敌人生成位等）。
 
-### 二、Domain（游戏世界规则原子能力）
+### 二、Domain（游戏世界规则）
 
 | Skill | 职责 |
 |-------|------|
-| **Seed** | **可复现性载体**（非 Infra Skill）：地图/会话等种子，**无 I/O**；与 `IRandom` 实现组合，支撑确定测试与回放语义（见上节）。 |
-| **PlayerModelManage** | 玩家数据模型：坐标、行程、状态、履历等**领域数据**维护（无控制台、无文件）。 |
-| **NpcModelManage** | NPC 实体模型：生成、坐标、人设、台词集、交互状态等**领域状态**维护。 |
-| **TaskModelManage** | 任务领域模型：创建、状态流转、条件定义、与 NPC 绑定等**纯规则与结构**。 |
-| **MapGridRule** | 二维网格可走规则：坐标合法性、障碍碰撞、行走边界校验（权威网格语义，对齐下 1/4 **PlayfieldGrid**）。 |
-| **NpcSpawnRule** | NPC 生成与游荡：沿路刷新、随机游走、停留待机等**规则**（随机数经端口）。 |
-| **InteractJudgeRule** | 玩家–NPC 交互判定：邻格距离、触发对话条件等**校验规则**。 |
-| **SceneGenRule** | 沿途场景生成规则：公路、行道树、长椅、便利店等场景块随机/组合生成（无 I/O；读表由 Infra 读入后注入）。 |
+| **TileBase / TileKind** | 地形可走性、`glyph()`；扩展新瓦片子类。 |
+| **PlayfieldGrid** | 房间网格权威：`walkable` / `tile` / `setKind`。 |
+| **CombatEntity** | 动态实体步进契约；子类实现具体 AI、弹道、射击冷却。 |
+| **World** | 会话状态：`resetBattle`、`simulateStep`、`BattleOutcome`；持有 `IRandom&`；敌弹生成与剔除。 |
+| **Seed** | 可复现种子。 |
 
-### 三、Application（流程编排与状态调度）
+### 三、Application（编排）
 
 | Skill | 职责 |
 |-------|------|
-| **GameStateMachine** | 游戏状态机：菜单 / 漫游 / 对话 / 任务 / 日志等状态切换与流转。 |
-| **GameMainLoop** | 主循环帧调度：每帧配合 **FrameTimer** 的 **`deltaTime`** 与 FPS 节拍；顺序为 **非阻塞** 输入→逻辑更新→行为推演→触发渲染数据产出（不直接画屏）。 |
-| **PlayerMoveFlow** | 玩家移动编排：接按键语义→坐标更新意图→调用 Domain 规则校验→回写领域模型。 |
-| **NpcBehaviorFlow** | NPC 行为编排：待机 / 游荡 / 靠近玩家检测等**一帧式**调度顺序。 |
-| **DialogFlowCtrl** | 对话业务组装：触发对话→分页展示→选项分支→关联任务挂载（状态与数据流在 App，**不**负责字符绘制）。 |
-| **TaskProcessFlow** | 任务全流程：接取→条件监听→进度更新→完成结算→日志归档编排。 |
-| **ViewSnapshotAssemble** | **画面快照组装**：聚合玩家、NPC、地图、背景等只读数据，输出 **`RenderSnapshot`**（及与 UI 相关的 **`OverlayModel`** 由本层或并列用例组装，Rep 只消费 DTO）。 |
+| **GameStateMachine** | `Title` / `Battle` / `Victory` / `Defeat` 迁移。 |
+| **CombatTickFlow** | 每帧：`PlayerIntent` 聚合 → `World::setIntent` → `simulateStep(dt)` → 读结果写审计。 |
+| **ViewSnapshotAssemble** | 组装 **`RenderSnapshot`**（`enemies` / `bullets` / `player_hp` 等）与 **`OverlayModel`**。 |
 
-### 四、Representation（视觉与输入映射）
+### 四、Representation（表现）
 
 | Skill | 职责 |
 |-------|------|
-| **SceneLayerRender** | 分层画面合成：下半可走网格 + 上半远景（布局可对齐「石河伦吾」式上下分区）。合成缓冲以 **`CharPixel`** 栅格为单元（见下节）。 |
-| **ParallaxScroll** | 视差滚动渲染：远景慢偏移、地面/可玩带相对滚动；**位移量与 `deltaTime` 结合**，保证平滑连续滚动感（系数可与 Domain 规则侧参数配合，**像素级输出**在此层）。 |
-| **KeyMappingTransform** | 键位映射：**KeyboardRawListen 的原始码** → 上/下/左/右/交互/打开日志等 **`GameCommand` 语义**。 |
-| **ThemeStyleRender** | 主题色与文艺 UI：黄昏/夜空、对话框样式、封面与文艺文案排版；通过改写 **`CharPixel::color_attr`**（或等价查找表）做**全局换肤**，**不改** `symbol` 所依赖的 **Domain** 语义与规则。 |
-| **DialogUIPop** | 对话弹窗渲染：对白面板、分页文案刷新、选项按钮绘制（消费 `OverlayModel`）。 |
-| **TravelLogUI** | 旅途日志界面：记录列表、任务履历、文艺结语等**界面侧**渲染更新。 |
+| **SceneLayerRender** | `FrameComposer`：`RenderSnapshot` → **`FrameCell` 仅铺地/墙/障碍**；**不再**用格网画玩家/敌人（避免与浮点精灵错位）。 |
+| **KeyMappingTransform** | `RawInputSnapshot` → `GameCommand`（含 **`Fire`**）。 |
+| **ThemeStyleRender** | `color_id` → `colorFromId`；主题只改配色，**不改** Domain 语义。 |
+| **DialogUIPop** | `SfmlGameWindow` 最后绘制 `OverlayModel`（标题 / 结束面板）。 |
+| **SpriteSheetLoad** | `SpriteSheetConfig` + JSON；失败回退几何占位。 |
+| **ActorSpriteAnim** | `PlayerSpriteAnimator`：快照驱动动画与朝向。 |
+| **EnemySpriteSheet** | 敌人图集 JSON + `EnemyVisualResources`：与玩家相同的 **atlas + clip** 模型；`drawEnemies` 使用 **`setTextureRect`**，近战姿态用快照中 **与 Domain 一致的曼哈顿阈值**（经 `elite_melee_manhattan_tiles` 等字段），避免 Rep 与 `enemy_behavior` 魔法数分叉。 |
 
-### CharPixel（逻辑格「像素」）
+### 逻辑格与屏幕像素
 
-- **定义**：一个逻辑控制台格对应 **`CharPixel`**，例如 `struct { char symbol; int color_attr; }`（`color_attr` 与 Win32 属性字、ANSI SGR 索引或内部调色板 id 对齐即可，由 **ConsoleDriver** 最终解释）。
-- **用途**：**SceneLayerRender** / **FrameComposer** 在内存中先填满 `CharPixel` 矩阵，再整屏刷新；**ThemeStyleRender** 仅调整 **`color_attr`** 即可切换「黄昏」「冷夜」等主题，**无需修改任何 Domain 逻辑**或领域侧符号决策。
+- **Domain**：`ScreenLayout::kCols` × `kRows`，**`kPlayfieldFraction = 1`** 时整屏为房间（`sky_rows = 0`）。
+- **Representation**：`kScreenPixelsPerLogicalCell` 控制 SFML 正方形色块尺寸。
+- **天空微格**：`sky_rows == 0` 时主循环不走微格细分；保留常量以兼容旧构图。
 
 ### 分层对照（快速落位）
 
 ```text
-ConsoleDriver, FrameTimer, KeyboardRawListen, RandomUtil, FilePersistence,
-AssetPathConfig, BgmCtrl
+FrameTimer, KeyboardRawListen, StdRandom, FileAuditSink, BgmCtrl
   → infrastructure/
 
-Seed, PlayerModelManage, NpcModelManage, TaskModelManage, MapGridRule, NpcSpawnRule,
-InteractJudgeRule, SceneGenRule
+TileBase, PlayfieldGrid, CombatEntity, World, Seed, IRandom 端口
   → domain/
 
-GameStateMachine, GameMainLoop, PlayerMoveFlow, NpcBehaviorFlow,
-DialogFlowCtrl, TaskProcessFlow, ViewSnapshotAssemble
+GameApplication, RenderSnapshot, OverlayModel, GameCommand, GameState
   → application/
 
-SceneLayerRender, ParallaxScroll, KeyMappingTransform, ThemeStyleRender,
-DialogUIPop, TravelLogUI
+FrameComposer, KeyMapping, ThemePalette, SfmlGameWindow, SpriteSheetConfig,
+  PlayerSpriteAnimator, enemy_visual_resources, movement_particles, combat_vfx_particles
   → representation/
 ```
 
-**输入链**：`KeyboardRawListen`（Infra，**非阻塞**）→ 原始事件进入循环 → `KeyMappingTransform`（Rep）→ `GameCommand` → Application 各 Flow / FSM。  
-**时间链**：`FrameTimer`（Infra）→ **`deltaTime` + FPS 节流** → `GameMainLoop` / 视差与需要积分的用例。  
-**输出链**：Domain 更新 → `ViewSnapshotAssemble`（App）→ `RenderSnapshot`/`OverlayModel`（以**符号/逻辑**为主即可）→ Rep 合成 **`CharPixel`** → `SceneLayerRender` / `ParallaxScroll` / `ThemeStyleRender` / `DialogUIPop` / `TravelLogUI` → `ConsoleDriver`（Infra）。
+**输入链**：`RawInputSnapshot`（Rep 采集）→ `GameCommand` → `GameApplication::tick`。  
+**时间链**：`FrameTimer` → **`deltaTime`** → `World::simulateStep`。  
+**输出链**：Domain → **`RenderSnapshot`** → `FrameComposer` → `SfmlGameWindow`。
 
 ---
 
@@ -106,63 +135,68 @@ DialogUIPop, TravelLogUI
 
 ```text
 Representation → Application → Domain
-Infrastructure → Domain（实现端口，可 include Domain 头）
+Infrastructure → Domain
 ```
 
-- **禁止** `Representation` 源码 `#include` Domain 路径或直接调用领域实体逻辑；表现层只消费 **Application** 暴露的 DTO（如 `RenderSnapshot`、`OverlayModel`），通过 `GameCommand` 等调用用例。
-- **Domain**：无 WinAPI、无具体文件/网络实现；端口仅抽象（如 `IAuditSink`、`IClock`、`IRandom`；终端能力接口若放 Domain 则保持抽象）。**`Seed`** 与 **`IRandom`** 配合保证随机相关规则**可测、可复现**。
-- **Application**：状态机与每 tick 编排；**禁止** include 控制台头、禁止直接 `std::cout` 刷屏；审计经注入端口。
-- **Infrastructure**：实现端口与 OS/文件/音频/终端；**不含**游戏状态机业务规则。
+- **禁止** Representation `#include` Domain 实体或调用领域逻辑；只消费 DTO。
+- **Domain**：无 SFML/文件实现；随机经 **`IRandom`**。
+- **Application**：状态机与审计；不直接刷屏。
+- **Infrastructure**：端口实现与 OS 细节。
 
-## 画面与坐标（横版 16:9）
+## 画面与坐标（当前 MVP）
 
-- 用逻辑 **`Cols` × `Rows`** 近似 16:9（例如先定 `Rows`，再 `Cols = round(Rows * 16/9)` 并偶数对齐）；答辩说明为构图比例。
-- **上 3/4**（`row < Rows * 3/4`）：仅背景；`ParallaxBackground` 等多层视差，各层独立 **scroll 系数**；**不参与可走碰撞**。
-- **下 1/4**（`row >= Rows * 3/4`）：**PlayfieldGrid** 权威碰撞与占用；玩家与 NPC **仅在此带**生成、更新、相邻/交互判定。
-- 玩家逻辑格 `(gx, gy)`：**`gy` 限制在下带行范围**；四向中 **`gx` 为主位移**，`gy` 小范围变化。
-- **对话/任务 UI**：不占地图格；**Application** 组装 **`OverlayModel`**，**Representation** 的 **FrameComposer** 最后绘制浮层；对话态是否冻结步进由 **Application 状态机** 决定。
+- 逻辑 **`Cols` × `Rows`** 近似 16:9；**整屏单房间**：墙体围边界，随机 `Obstacle`；**玩家与敌人为连续坐标**（速度积分 + 格上网格碰撞）；子弹同连续坐标。
+- **Overlay**：不占玩法格；由 Application 填 `OverlayModel`。
+- **资源路径**：`assets/sprites/`、`assets/fonts/`；运行 **工作目录** 需能解析相对路径（IDE 常从 `build/Debug` 启动时需自带 `assets` 或拷贝）。
 
-## 帧合成顺序
+## 帧合成顺序（SFML `present`）
 
-**FrameComposer** 建议顺序：各背景视差层 → 下带路面与实体 →（可选 HUD）→ **Overlay**。（与 **SceneLayerRender**、**ParallaxScroll**、**DialogUIPop** 职责一致：可合并为同一模块内子步骤。）
+1. `FrameComposer`：仅 **天空/地表瓦片** 色块。  
+2. 粒子（脚尘、受击 VFX 等）。  
+3. **敌人**（圆或精灵）→ **子弹** → **玩家**（最上层，含血条 HUD）。  
+4. **Overlay**（标题 / 结算）。  
 
-## 推荐目录与 CMake
+与早期「格网覆盖画敌/玩家」不同：**动态体一律在 SFML 层按世界坐标绘制**。
 
-- `src/domain/` — 实体、规则、`PlayfieldGrid`、`ParallaxBackground` 生成上带缓冲的规则侧数据（若纯算法无 I/O 可放 Domain）、**端口声明**（含 **`IRandom`**）、**`Seed`** 值对象、扩展接口如 `INpcBehavior` / 任务规则基类。
-- `src/application/` — `GameApplication`、状态（封面/漫游/对话/日志等）、用例、**`RenderSnapshot` / `OverlayModel` / `GameCommand`**。
-- `src/representation/` — `KeyMappingTransform`、`FrameComposer`（内含 SceneLayerRender / ParallaxScroll 等）、`Theme`；调用 Infra 的 **`ITerminal` / `IConsoleSurface`**（名称以仓库为准）。
-- `src/infrastructure/` — `FileAuditSink`、`BgmCtrl`、**`FrameTimer`**、`ConsoleDriver`、**非阻塞** `KeyboardRawListen`、`RandomUtil`、路径与持久化；实现 Domain 声明的端口。
-- `src/main.cpp` — 依赖注入组装。
+## 目录与 CMake（稳定骨架）
 
-目标：**四库或四 include 根 + 单 exe**，链接关系体现上述依赖；C++17+。
+- `src/domain/` — `tile_base.*`、`combat_entities.*`、`playfield.*`、`world.*`、`enemy_behavior.*`、`bullet_hit_policy.*`、`score_state.*`、端口、`seed.hpp`
+- `src/application/` — `game_application.*`、`render_snapshot.hpp`、`overlay_layout.*`、`game_command.hpp`、`game_state.hpp`
+- `src/representation/` — `frame_composer.*`、`sfml_game_window.*`、`key_mapping.*`、`theme_palette.*`、`sprite_sheet_config.*`、`player_sprite_animator.*`、`enemy_visual_resources.*`、`movement_particles.*`、`combat_vfx_particles.*`
+- `src/infrastructure/` — `frame_timer.*`、`file_audit_sink.*`、`std_random.*` 等
+- `src/main.cpp` — 注入 `StdRandom` → `World`
 
-## 审计与 BGM
+## 审计与可选音频
 
-- 端口在 **Domain**（或全项目统一的一处 **Application** 边界）**仅声明**；**Infrastructure** **实现**。
-- **Application** 在用例关键点写审计；Domain 若需记录不变式，可返回事件列表由 App 写出，避免 Domain 依赖文件。
-- BGM 初始化在 **main 或 Application 启动** 经 Infra；可选编译开关关闭 BGM 以应对课程限制。
+- **Application** 在状态迁移、胜负时写审计。
+- BGM/音效：可选；经 Infra，不阻塞模拟步。
 
-## 初版 MVP 范围
+## MVP 范围
 
-- 可运行主循环；**漫游**：下带四向移动与边界碰撞；上带至少一层视差占位；整屏字符刷新；可选黄昏/冷夜主题；**文件审计必开**；BGM 可选。
-- 窗口化/SFML：若需要，仅在 **Representation** 增加适配器，消费同一 **`RenderSnapshot`**，不改 Domain/Application 边界。
-
-## 第二阶段（勿在初版必交中过度展开）
-
-流式场景块、多层视差细化、全量 NPC/对话/四类文艺任务等——见原始计划；改动时避免污染 MVP 边界。
+- 标题 → 战斗 → 胜利/失败；四向移动 + **Space/左键开火**；敌人游荡/追踪；子弹撞墙与命中；接触伤害；**`RenderSnapshot` 单帧一致**。
 
 ## 实现前自检
 
-- [ ] 新增 `#include` 是否违反 Rep→App→Dom / Inf→Dom？
-- [ ] 碰撞与实体逻辑是否只发生在下带网格？
-- [ ] 绘制与输入是否留在 Representation，业务状态机是否在 Application？
-- [ ] 带 I/O 的代码是否在 Infrastructure？
-- [ ] 当前改动对应上表哪一个 **Skill 名**，是否落在正确包内？
-- [ ] **键盘路径是否全程非阻塞**？主循环是否被 `getch()`/阻塞 `cin` 拖死？
-- [ ] 是否有 **FrameTimer / FPS 节流**，避免 CPU 空转；需要平滑位移处是否传入 **`deltaTime`**？
-- [ ] 随机性是否经 **`IRandom` + `Seed`** 建模，避免 Domain 单测飘红？
-- [ ] 主题切换是否只动 **`CharPixel::color_attr`**（或等价映射），而不改 Domain 符号语义？
+- [ ] `#include` 是否违反 Rep→App→Dom / Inf→Dom？
+- [ ] 新敌种/新瓦片是否落在 **`CombatEntity` / `TileBase` 子类** 或同层扩展点？
+- [ ] 多实体与弹道是否只通过 **`RenderSnapshot`** 暴露给 Rep？
+- [ ] **`World::simulateStep` 是否使用 `dt`**（冷却、子弹位移）？
+- [ ] 随机是否只经 **`IRandom`**？
+- [ ] 主题是否只改 **`color_id` 映射**？
+- [ ] 输入是否**非阻塞**、主循环是否有 **FrameTimer**？
+- [ ] 新精灵是否 **JSON 可换路径**；Rep 是否在加载失败时 **回退占位**而不崩？
+- [ ] 敌人若为多帧图集，是否使用 **与主角相同的切帧模型**（单 texture + grid + clips），而非整张贴图？
+- [ ] Domain 与 Rep **是否重复同一魔法数**（如近战距离阈值）；若必须重复是否在注释中写明「须与 `enemy_behavior` 同步」或抽到 **Domain 头文件常量** 由 Application 写入快照？
 
-## 原始计划位置（本地）
+## 注意事项（反模式与边界）
 
-用户机器上的完整计划：`C:/Users/12073/.cursor/plans/沿途公路信步架构_14bf9d47.plan.md`（含 mermaid 图与风险说明）。若与本 skill 冲突，以**仓库内已落地代码**与**该计划文件**协商为准。
+1. **不要在 Representation 里 `#include` `world.hpp` 或改写 `EnemyActor`**；动画与贴图只依赖快照字段与本地时间累加器。  
+2. **`EnemyArchetype` 扩展（如预留 `Boss`）**：必须同步 `makeEnemyBehavior`、`configureForArchetype`、分数等所有 `switch`，避免未处理枚举；未实装前可用占位行为并标 `TODO`。  
+3. **子弹派系**：用 `BulletFaction` / `BulletFactionView` 区分绘制与命中策略，敌弹特殊贴图用 **快照枚举或 `uint8_t` 子类型**，避免在 Rep 里 `dynamic_cast` 跨 DLL/静态库边界（优先虚函数 `enemyBulletSprite()` 一类接口）。  
+4. **Letterbox / 鼠标瞄准**：逻辑坐标用 `mapPixelToCoords`；瞄准向量在 **Application** 写入 `PlayerIntent`，与精灵朝向解耦（朝向可读 `player_vx` 或后续快照字段）。  
+5. **CMake**：新增 `representation` 下 `.cpp` 须加入根 **`CMakeLists.txt`** 的 `roadside_representation` 源列表；若使用 **SFML Audio**，Windows **POST_BUILD** 须包含 **OpenAL32.dll** 与 `sfml-audio-2.dll` 等到 exe 目录（见上表 BgmCtrl）。  
+6. **敌人精灵**：美术交付 **一张合成表** 时，必须同时给出 **`columns`/`rows` 与各 clip 的 `row`/`start_col`/`frame_count`/`fps`**；与主角一样错一格会花屏；**禁止**在 Rep 里把整张 atlas 当单帧贴图。
+
+## 原始计划（本地）
+
+早期公路企划：`C:/Users/12073/.cursor/plans/沿途公路信步架构_14bf9d47.plan.md`。战斗改造计划：`C:/Users/12073/.cursor/plans/元气骑士风战斗改造_f7b79992.plan.md`。敌人精灵与岩石弹、图集切帧：`C:/Users/12073/.cursor/plans/敌人精灵与岩石弹_1ef780fe.plan.md`、`C:/Users/12073/.cursor/plans/敌人精灵表切帧_b472a821.plan.md`。与 skill 冲突时以**仓库已落地代码**为准。

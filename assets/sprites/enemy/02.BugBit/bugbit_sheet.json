@@ -1,0 +1,10 @@
+{
+  "texture": "assets/sprites/enemy/02.BugBit/bugbit_atlas.png",
+  "columns": 6,
+  "rows": 2,
+  "scale_vs_disc": 2.3,
+  "clips": {
+    "idle": { "row": 0, "start_col": 0, "frame_count": 6, "fps": 8 },
+    "move": { "row": 1, "start_col": 0, "frame_count": 4, "fps": 10 }
+  }
+}
